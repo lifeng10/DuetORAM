@@ -56,8 +56,8 @@ typedef struct type_pos_map
 {
 	TYPE_INDEX pathID;
 	TYPE_INDEX pathIdx;
-    block iv_1;
-    block iv_2;
+    block iv1;
+    block iv2;
 }TYPE_POS_MAP;
 
 
@@ -84,11 +84,12 @@ const std::string rootPath = "../data/";
 
 const std::string clientLocalDir = rootPath + "client_local/";
 const std::string clientDataDir = rootPath + "client/";
-const std::string clientDataDir_iv1 = rootPath + "client_iv_1/";
-const std::string clientDataDir_iv2 = rootPath + "client_iv_2/";
 const std::string serverDataDir0 = rootPath + "server0/";
 const std::string serverDataDir1 = rootPath + "server1/";
 const std::string clientTempPath = rootPath + "client_local/local_data";
+const std::string clientDataDir_iv1 = rootPath + "client_iv1/";
+const std::string clientDataDir_iv2 = rootPath + "client_iv2/";
+
 
 const std::string logDir = rootPath + to_string(H) + "_" + to_string(BLOCK_SIZE) + "/" + "log/";
 //=============================================================================
