@@ -19,7 +19,10 @@ ServerDuetORAM::ServerDuetORAM(TYPE_INDEX serverNo, int selectedThreads) {
     this->CLIENT_ADDR = "tcp://*:" + std::to_string(SERVER_PORT+(serverNo)*NUM_SERVERS+serverNo);
 
     this->numThreads = selectedThreads;
-    this->thread_compute = new pthread_t[numThreads];
+    this->thread_compute = new pthread_t[this->numThreads];
+    //=======================
+    cout << "Number of computation threads: " << this->numThreads << endl;
+    //=======================
 
     cout<<endl;
 	cout << "=================================================================" << endl;
@@ -237,8 +240,7 @@ int ServerDuetORAM::retrieve(zmq::socket_t& socket)
         CPU_SET(i, &cpuset);
         pthread_setaffinity_np(thread_compute[i], sizeof(cpu_set_t), &cpuset);
     }
-
-    for(int i = 0, startIdx = 0 ; i < numThreads , startIdx < DATA_CHUNKS; i ++, startIdx+=step)
+    for(int i = 0; i < numThreads; i++)
     {
         pthread_join(thread_compute[i],NULL);
     }
@@ -269,7 +271,7 @@ int ServerDuetORAM::retrieve(zmq::socket_t& socket)
         pthread_setaffinity_np(thread_compute[i], sizeof(cpu_set_t), &cpuset);
     }
     
-    for(int i = 0, startIdx = 0 ; i < numThreads , startIdx < DATA_CHUNKS; i ++, startIdx+=step)
+    for(int i = 0; i < numThreads; i++)
     {
         pthread_join(thread_compute[i],NULL);
     }
@@ -327,8 +329,10 @@ void* ServerDuetORAM::thread_dotProduct_func(void* args)
 
     for (int i = opt->start; i < opt->end; i++)
     {
+        opt->dot_product_output[i] = 0;
         for (int j = 0; j < (BUCKET_SIZE*(H+1)); j++)
         {
+            
             if (opt->sharedVector[j] == 1)
             {
                 opt->dot_product_output[i] = opt->dot_product_output[i] ^ opt->data_vector[i][j];
@@ -346,9 +350,20 @@ int ServerDuetORAM::recvBlock(zmq::socket_t& socket)
     TYPE_INDEX slotIdx;
     TYPE_DATA recvBlock[DATA_CHUNKS];
     block recv_iv;
-    memcpy(&slotIdx, &block_buffer_in[0], sizeof(TYPE_INDEX));
-    memcpy(recvBlock, &block_buffer_in[sizeof(TYPE_INDEX)], sizeof(TYPE_DATA)*DATA_CHUNKS);
+    memcpy(recvBlock, &block_buffer_in[0], sizeof(TYPE_DATA)*DATA_CHUNKS);
+    memcpy(&slotIdx, &block_buffer_in[sizeof(TYPE_DATA)*DATA_CHUNKS], sizeof(TYPE_INDEX));
     memcpy(&recv_iv, &block_buffer_in[sizeof(TYPE_INDEX)+sizeof(TYPE_DATA)*DATA_CHUNKS], sizeof(block));
+
+    //==========================================
+    cout << "    [recvBlock] Received Block Data for SlotIdx-" << slotIdx << endl;
+    cout << "    [recvBlock] Received Block Data: ";
+    for (int i = 0; i < DATA_CHUNKS; i++)
+    {
+        cout << recvBlock[i] << " ";
+    }
+    cout << endl;
+    cout << "    [recvBlock] Received IV: " << recv_iv << endl;
+    //==========================================
 
     cout<< "	[recvBlock] Block Data RECV in " << std::chrono::duration_cast<std::chrono::nanoseconds>(end-start).count() <<endl;
     server_logs[4] = std::chrono::duration_cast<std::chrono::nanoseconds>(end-start).count();

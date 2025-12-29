@@ -424,8 +424,8 @@ int ClientDuetORAM::access(TYPE_ID blockID)
 
     for (int i = 0; i < NUM_SERVERS; i++)
     {
-        memcpy(&block_buffer_out[i][0], &newBlock, sizeof(TYPE_DATA)*DATA_CHUNKS);
-        memcpy(&block_buffer_out[i][sizeof(TYPE_DATA)*DATA_CHUNKS], &numRead, sizeof(numRead));
+        memcpy(&block_buffer_out[i][0], newBlock, sizeof(TYPE_DATA)*DATA_CHUNKS);
+        memcpy(&block_buffer_out[i][sizeof(TYPE_DATA)*DATA_CHUNKS], &numRead, sizeof(TYPE_INDEX));
         if (i == 0)
         {
             memcpy(&block_buffer_out[i][sizeof(TYPE_DATA)*DATA_CHUNKS+sizeof(TYPE_INDEX)], &iv1, sizeof(block));
@@ -457,6 +457,8 @@ int ClientDuetORAM::access(TYPE_ID blockID)
 	cout << "ACCESS OPERATION FOR BLOCK-" << blockID << " COMPLETED." << endl; 
 	cout << "================================================================" << endl;
 
+
+    
 
     return 0;
 }
