@@ -89,6 +89,7 @@ const std::string serverDataDir1 = rootPath + "server1/";
 const std::string clientTempPath = rootPath + "client_local/local_data";
 const std::string clientDataDir_iv1 = rootPath + "client_iv1/";
 const std::string clientDataDir_iv2 = rootPath + "client_iv2/";
+const std::string keysPath = rootPath + "keys/";
 
 
 const std::string logDir = rootPath + to_string(H) + "_" + to_string(BLOCK_SIZE) + "/" + "log/";

@@ -28,6 +28,10 @@ private:
     unsigned char** blocks_buffer_in;       // receiving retrieved blocks buffer from servers
 
 
+    //thread
+	pthread_t thread_sockets[NUM_SERVERS];
+
+
 
     //variables for eviction
     TYPE_INDEX numEvict;
@@ -38,6 +42,18 @@ public:
 
     // main functions
     int init();
+    int load();
+    int access(TYPE_ID blockID);
+    int sendORAMTree();
+
+
+    //retrieval vector
+    int getLogicalVector(uint8_t* logicVector, TYPE_ID blockID);
+
+
+    // socket
+    static void* thread_socket_func(void* args);
+    static int sendNrecv(std::string ADDR, unsigned char* data_out, size_t data_out_size, unsigned char* data_in, size_t data_in_size, int CMD);
     
 
     //logging

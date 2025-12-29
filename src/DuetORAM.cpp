@@ -314,3 +314,39 @@ int DuetORAM::build(TYPE_POS_MAP* pos_map, TYPE_DATA** metaData, block k1, block
 
     return 0;
 }
+
+int DuetORAM::getFullPathIdx(TYPE_INDEX* fullPath, TYPE_INDEX pathID)
+{
+    TYPE_INDEX idx = pathID;
+    for (int i = H; i >= 0; i--)
+    {
+		fullPath[i] = idx;
+		idx = (idx-1) >> 1;
+    }
+	
+	return 0;
+}
+
+int DuetORAM::getSharedVector(uint8_t* logicalVector, uint8_t** sharedVector)
+{
+    cout << "	[DuetORAM] Starting to Create Retrieve Shares" << endl;
+
+    std::random_device rd;
+    std::default_random_engine eng(rd());
+    std::uniform_int_distribution<uint8_t> distr(0, 1);
+
+    for (TYPE_INDEX i = 0; i < BUCKET_SIZE*(H+1); i++)
+    {
+        sharedVector[0][i] = distr(eng);
+        sharedVector[1][i] = logicalVector[i] ^ sharedVector[0][i];
+    }
+    
+    return 0;
+}
+
+
+
+
+
+
+
