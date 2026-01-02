@@ -10,6 +10,8 @@
 #include <cstring>
 #include <bitset>
 #include <algorithm>
+#include <omp.h>
+#include <immintrin.h> // 必须包含：AVX2指令集
 #include <assert.h>
 #include <boost/progress.hpp>
 #include <map>
@@ -39,10 +41,10 @@ enum Operation {READ, WRITE};
 //====================================================================
 
 //=== PARAMETERS ============================================================
-#define BLOCK_SIZE 64
-#define HEIGHT 9
-#define BUCKET_SIZE 333 
-#define EVICT_RATE 280
+#define BLOCK_SIZE 8
+#define HEIGHT 2
+#define BUCKET_SIZE 4
+#define EVICT_RATE 3
 const int H = HEIGHT; 
 
 static const unsigned long long P = 1073742353; //prime field - should have length equal to the defined TYPE_DATA

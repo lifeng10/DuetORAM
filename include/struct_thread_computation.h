@@ -23,6 +23,10 @@ typedef struct struct_thread_computation
     TYPE_DATA** delta_extension;
     TYPE_DATA** local_data;
 
+    // XOR operation for dot_product_vector_xored
+    TYPE_DATA** dot_product_vector_xored;
+    TYPE_DATA** dot_product_vector_xored_in;
+
 
     
     struct_thread_computation(TYPE_INDEX start, TYPE_INDEX end, TYPE_DATA** input, uint8_t* sharedVector, TYPE_DATA* dot_product_output)
@@ -34,6 +38,16 @@ typedef struct struct_thread_computation
         this->dot_product_output = dot_product_output;
     }
 
+    // 异或的结果存放在dot_product_vector_xor中
+    struct_thread_computation(TYPE_INDEX start, TYPE_INDEX end, TYPE_DATA** dot_product_vector_xored, TYPE_DATA** dot_product_vector_xored_in)
+    {
+        this->start = start;
+        this->end = end;
+        this->dot_product_vector_xored = dot_product_vector_xored;
+        this->dot_product_vector_xored_in = dot_product_vector_xored_in;
+    }
+
+    // 计算secret shared shuffle发送给对面服务器时进行的异或
     struct_thread_computation(TYPE_INDEX start, TYPE_INDEX end, TYPE_DATA** a_extension, TYPE_DATA** dot_product_vector, TYPE_DATA** masked_data_send)
     {
         this->start = start;
@@ -43,6 +57,7 @@ typedef struct struct_thread_computation
         this->masked_data_send = masked_data_send;
     }
 
+    // 计算对面服务器发来的数据
     struct_thread_computation(TYPE_INDEX start, TYPE_INDEX end, TYPE_INDEX* sub_pi, TYPE_DATA** masked_data_recv, TYPE_DATA** delta_extension, TYPE_DATA** dot_product_vector, TYPE_DATA** local_data)
     {
         this->start = start;

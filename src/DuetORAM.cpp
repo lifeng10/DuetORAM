@@ -344,7 +344,22 @@ int DuetORAM::getSharedVector(uint8_t* logicalVector, uint8_t** sharedVector)
     return 0;
 }
 
+TYPE_INDEX DuetORAM::getEvictLeafID(TYPE_INDEX n_evict)
+{
+    TYPE_INDEX reversed_val = 0;
+    // 1. 手动进行比特反转 (Bit Reversal)
+    // 比如 H=3, n_evict=001(1) -> 变成 100(4)
+    TYPE_ID temp = n_evict;
+    for (int i = 0; i < H; ++i) {
+        reversed_val <<= 1;      // 结果左移腾出位置
+        reversed_val |= (temp & 1); // 取 temp 的最低位填入
+        temp >>= 1;              // temp 右移处理下一位
+    }
 
+    // 2. 计算 Root=0 下的叶子节点全局 ID
+    // 偏移量：2^H - 1
+    return ((1 << H) - 1) + reversed_val;
+}
 
 
 

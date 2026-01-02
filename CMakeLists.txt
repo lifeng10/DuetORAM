@@ -10,6 +10,7 @@ set(CMAKE_BUILD_TYPE Debug)
 aux_source_directory(${ORAM_SOURCE_DIR}/src SRC)
 list(REMOVE_ITEM SRC ${ORAM_SOURCE_DIR}/src/csprng.cpp)
 find_package(OpenSSL REQUIRED)
+find_package(OpenMP REQUIRED)
 find_package(Boost REQUIRED COMPONENTS system)
 # add_compile_options(-march=native -O3 -Wall -pthread)
 add_compile_options(-march=native -O0 -Wall -pthread)
@@ -27,4 +28,5 @@ target_link_libraries(main
     OpenSSL::Crypto     # 解决 EVP_... 报错
     pthread             # 解决线程报错
     ${Boost_LIBRARIES}  # 链接 Boost
+    OpenMP::OpenMP_CXX
 )

@@ -52,6 +52,42 @@ ClientDuetORAM::ClientDuetORAM() {
         this->block_buffer_out[i]= new unsigned char[sizeof(TYPE_DATA)*DATA_CHUNKS+sizeof(TYPE_INDEX)+sizeof(block)];
         memset(this->block_buffer_out[i], 0, sizeof(TYPE_DATA)*DATA_CHUNKS+sizeof(TYPE_INDEX)+sizeof(block) );
     }
+
+    // eviction variables
+    // 初始化随机向量
+    this->SIZE_PI = (H+2)*BUCKET_SIZE;
+    this->u1 = new TYPE_INDEX[SIZE_PI];
+    this->u2 = new TYPE_INDEX[SIZE_PI];
+
+    // 初始化置换矩阵
+    this->permutationAa = new block[SIZE_PI * SIZE_PI];
+    this->permutationBb = new block[SIZE_PI * SIZE_PI];
+
+    // 初始化子置换
+    this->sub_pi_1 = new TYPE_INDEX[SIZE_PI];
+    this->sub_pi_2 = new TYPE_INDEX[SIZE_PI];
+
+    // 初始化循环移位
+    this->circularShift_1 = new TYPE_INDEX[SIZE_PI];
+    this->circularShift_2 = new TYPE_INDEX[SIZE_PI];
+
+    // 初始化置换密钥缓冲区，存储发送给服务器的穿刺矩阵和密钥
+    this->key_permutation_buffer_out = new block*[NUM_SERVERS];
+    for (int i = 0 ; i < NUM_SERVERS; i++)
+    {
+        this->key_permutation_buffer_out[i] = new block[SIZE_PI * SIZE_PI + 1]; // +1 for key
+    }
+
+    // 初始化置换索引
+    this->evict_pi = new TYPE_INDEX[SIZE_PI];
+
+    // 发送驱逐的信息给服务器：驱逐路径，子置换，2个循环移位向量，生成iv的种子
+    this->evict_buffer_out = new unsigned char*[NUM_SERVERS];
+    for (int i = 0; i < NUM_SERVERS; i++)
+    {
+        this->evict_buffer_out[i] = new unsigned char[sizeof(TYPE_INDEX) + sizeof(block) + 3 * sizeof(TYPE_INDEX) * SIZE_PI];
+    }
+    
 }
 
 ClientDuetORAM::~ClientDuetORAM() {
@@ -458,7 +494,115 @@ int ClientDuetORAM::access(TYPE_ID blockID)
 	cout << "================================================================" << endl;
 
 
-    
+    // 9. Perform eviction if needed
+    if (this->numRead == 0)
+    {
+        cout << "================================================================" << endl;
+		cout << "STARTING EVICTION-" << this->numEvict+1 <<endl;
+		cout << "================================================================" << endl;
+
+        // 9.1 generate permutation matrices        //NOTE: Offline process
+        cout << "================================================================" << endl;
+        cout << "STARTING INITIALIZE PERMUTATION MATRICES!" <<endl; 
+        cout << "================================================================" << endl;
+
+        PRG prg_permutation;
+        SecretSharedShuffle sss;
+        prg_permutation.random_block(&this->key3, 1);
+        prg_permutation.random_block(&this->key4, 1);
+        sss.initialize(this->key3, this->key4, this->permutationAa, this->permutationBb, this->u1, this->u2);
+
+        // 9.2 send punctured matrix and secret key to servers
+        memcpy(&key_permutation_buffer_out[0][0], &this->key4, sizeof(block));  //NOTE: key4 with permutationAa
+        memcpy(&key_permutation_buffer_out[0][1], &permutationAa[0], sizeof(block)*(H+2)*BUCKET_SIZE*(H+2)*BUCKET_SIZE);
+        memcpy(&key_permutation_buffer_out[1][0], &this->key3, sizeof(block));  //NOTE: key3 with permutationBb
+        memcpy(&key_permutation_buffer_out[1][1], &permutationBb[0], sizeof(block)*(H+2)*BUCKET_SIZE*(H+2)*BUCKET_SIZE);
+        sendInitialPermutation(this->key_permutation_buffer_out);
+        cout << "   [sendInitialPermutation] SENDING INITIALIZE PERMUTATION MATRICES FINISHED!" <<endl; 
+
+        // 9.3 generate shuffle
+        start = time_now;
+        blocks.clear();
+        // 9.3.1 read blocks from the path and sibling bucket of leaf bucket
+        TYPE_INDEX evict_pathID = ORAM.getEvictLeafID(numEvict);
+        TYPE_INDEX pIDH_sibling = getSibling(P(evict_pathID,H));
+        readSiblingBucket(pIDH_sibling);
+        for (int i = 0; i < H+1; i++)
+        {
+            readBucket(P(evict_pathID, i));
+        }
+
+        // 9.3.2 generate shuffle
+        block seed_iv1;
+        block seed_iv2;
+        sss.generateShuffle(this->blocks, evict_pathID, this->evict_pi, this->pos_map, this->metaData, seed_iv1, seed_iv2);
+        createSubPermutation(this->sub_pi_1, this->sub_pi_2);
+        
+        end = time_now;
+        cout<< "	[ClientDuetORAM] Evict Permutation Created in " << std::chrono::duration_cast<std::chrono::nanoseconds>(end-start).count()<< " ns"<<endl;
+		exp_logs[5] = std::chrono::duration_cast<std::chrono::nanoseconds>(end-start).count();
+
+        // 9.4 generate circular shift for shared permutation
+        for (TYPE_INDEX j = 0; j < SIZE_PI; j++)
+        {
+            this->circularShift_1[j] = (this->sub_pi_1[j] - this->u1[j] + SIZE_PI) % SIZE_PI;
+            this->circularShift_2[j] = (this->sub_pi_2[j] - this->u2[j] + SIZE_PI) % SIZE_PI;
+        }
+
+        // eviction information for server 0
+        memcpy(&evict_buffer_out[0][0], &evict_pathID, sizeof(TYPE_INDEX));
+        memcpy(&evict_buffer_out[0][sizeof(TYPE_INDEX)], &seed_iv1, sizeof(block));
+        memcpy(&evict_buffer_out[0][sizeof(TYPE_INDEX)+sizeof(block)], &sub_pi_1[0], sizeof(TYPE_INDEX)*SIZE_PI);
+        memcpy(&evict_buffer_out[0][sizeof(TYPE_INDEX)+sizeof(block)+sizeof(TYPE_INDEX)*SIZE_PI], &circularShift_1[0], sizeof(TYPE_INDEX)*SIZE_PI);
+        memcpy(&evict_buffer_out[0][sizeof(TYPE_INDEX)+sizeof(block)+2*sizeof(TYPE_INDEX)*SIZE_PI], &circularShift_2[0], sizeof(TYPE_INDEX)*SIZE_PI);
+
+        // eviction information for server 1
+        memcpy(&evict_buffer_out[1][0], &evict_pathID, sizeof(TYPE_INDEX));
+        memcpy(&evict_buffer_out[1][sizeof(TYPE_INDEX)], &seed_iv2, sizeof(block));
+        memcpy(&evict_buffer_out[1][sizeof(TYPE_INDEX)+sizeof(block)], &sub_pi_2[0], sizeof(TYPE_INDEX)*SIZE_PI);
+        memcpy(&evict_buffer_out[1][sizeof(TYPE_INDEX)+sizeof(block)+sizeof(TYPE_INDEX)*SIZE_PI], &circularShift_1[0], sizeof(TYPE_INDEX)*SIZE_PI);
+        memcpy(&evict_buffer_out[1][sizeof(TYPE_INDEX)+sizeof(block)+2*sizeof(TYPE_INDEX)*SIZE_PI], &circularShift_2[0], sizeof(TYPE_INDEX)*SIZE_PI);
+
+        // 9.5 send eviction information to servers
+        for (int i = 0; i < NUM_SERVERS; i++)
+        {
+            thread_args[i] = struct_socket(SERVER_ADDR[i] + ":" + std::to_string(SERVER_PORT+i*NUM_SERVERS+i), evict_buffer_out[i], sizeof(TYPE_INDEX) + sizeof(block) + 3 * sizeof(TYPE_INDEX) * SIZE_PI, NULL, 0, CMD_SEND_EVICT, NULL);
+            pthread_create(&thread_sockets[i], NULL, &ClientDuetORAM::thread_socket_func, (void*)&thread_args[i]);
+        }
+        
+        for (int i = 0; i < NUM_SERVERS; i++)
+        {
+            pthread_join(thread_sockets[i], NULL);
+        }
+
+        end = time_now;
+        cout<< "	[ClientDuetORAM] Eviction Permutation Send in " << std::chrono::duration_cast<std::chrono::nanoseconds>(end-start).count()<< " ns"<<endl;
+        
+        exp_logs[8] = thread_max;
+        thread_max = 0;
+		
+		cout << "================================================================" << endl;
+		cout << "EVICTION-" << this->numEvict+1 << " COMPLETED" << endl;
+		cout << "================================================================" << endl;
+        
+        this->numEvict = (numEvict+1) % N_leaf;
+    }
+
+    // 11. store local info to disk
+    FILE* local_data = NULL;
+	if((local_data = fopen(clientTempPath.c_str(),"wb+")) == NULL){
+		cout<< "	[ClientTripORAM] File Cannot be Opened!!" <<endl;
+		exit(0);
+	}
+	fwrite(this->pos_map, 1, (NUM_BLOCK+1)*sizeof(TYPE_POS_MAP), local_data);
+	fwrite(&this->numEvict, sizeof(this->numEvict), 1, local_data);
+	fwrite(&this->numRead, sizeof(this->numRead), 1, local_data);
+	fclose(local_data);
+     
+	// 12. write log
+	Utils::write_list_to_file(to_string(HEIGHT)+"_" + to_string(BLOCK_SIZE)+"_client_" + timestamp + ".txt",logDir, exp_logs, 9);
+	memset(exp_logs, 0, sizeof(unsigned long int)*9);
+        
 
     return 0;
 }
@@ -519,7 +663,116 @@ int ClientDuetORAM::sendNrecv(std::string ADDR, unsigned char* data_out, size_t 
     return 0;
 }
 
+int ClientDuetORAM::readBucket(TYPE_INDEX bucketID)
+{
+    struct_block block;
+    for (int i = 0; i < BUCKET_SIZE; i++)
+    {
+        block.blockID = this->metaData[bucketID][i];
+        if (block.blockID != 0)
+        {
+            block.pathID = this->pos_map[block.blockID].pathID;
+            block.pathIdx = this->pos_map[block.blockID].pathIdx;
+            block.iv1 = this->pos_map[block.blockID].iv1;
+            block.iv2 = this->pos_map[block.blockID].iv2;
+            this->blocks.push_back(block);
+        }
+    }
+    
+    return 0;
+}
 
+int ClientDuetORAM::readSiblingBucket(TYPE_INDEX bucketID)
+{
+    struct_block block;
+    for (int i = 0; i < BUCKET_SIZE; i++)
+    {
+        block.blockID = this->metaData[bucketID][i];
+        if (block.blockID != 0)
+        {
+            block.pathID = this->pos_map[block.blockID].pathID;
+            block.pathIdx = this->pos_map[block.blockID].pathIdx + BUCKET_SIZE;
+            block.iv1 = this->pos_map[block.blockID].iv1;
+            block.iv2 = this->pos_map[block.blockID].iv2;
+            this->blocks.push_back(block);
+        }
+    }
+    
+    return 0;
+}
+
+TYPE_INDEX ClientDuetORAM::P(TYPE_INDEX pathID, int l)
+{
+    return (TYPE_INDEX)((1<<l) - 1 + (((pathID+1) % N_leaf) >> (H - l)));
+}
+
+TYPE_INDEX ClientDuetORAM::getSibling(TYPE_INDEX pIDl)
+{
+    return (pIDl % 2) ? (pIDl + 1) : (pIDl - 1);
+}
+
+int ClientDuetORAM::sendInitialPermutation(block** key_permutation_buffer_out)
+{
+    int CMD = CMD_SEND_INITIALIZATION_PERMUTATION;
+    unsigned char buffer_in[sizeof(CMD_SUCCESS)];
+    unsigned char buffer_out[sizeof(CMD)];
+
+    memcpy(buffer_out, &CMD,sizeof(CMD));
+
+    zmq::context_t context(1);
+    zmq::socket_t socket(context,ZMQ_REQ);
+
+    for (int i = 0; i < NUM_SERVERS; i++)
+    {
+        string ADDR = SERVER_ADDR[i]+ ":" + std::to_string(SERVER_PORT+i*NUM_SERVERS+i); 
+        cout<< "	[sendInitialPermutation] Connecting to " << ADDR <<endl;
+        socket.connect( ADDR.c_str());
+
+        socket.send(buffer_out, sizeof(CMD));
+		cout<< "	[sendInitialPermutation] Command SENT! " << CMD <<endl;
+        socket.recv(buffer_in, sizeof(CMD_SUCCESS));
+
+        socket.send(key_permutation_buffer_out[i], sizeof(block)*((H+2)*BUCKET_SIZE * (H+2)*BUCKET_SIZE + 1), 0);
+        socket.recv(buffer_in, sizeof(CMD_SUCCESS));
+        socket.disconnect( ADDR.c_str());
+    }
+    socket.close();
+
+    return 0;
+}
+
+int ClientDuetORAM::createSubPermutation(TYPE_INDEX* pi_1, TYPE_INDEX* pi_2)
+{
+    //create random permutation pi_1
+    generateRandomPermutation(pi_1, BUCKET_SIZE*(H+2));
+
+    //create inverse permutation of pi_1
+    // vector<TYPE_INDEX> inverse_pi_1 = inversePermutation(pi_1);
+    TYPE_INDEX* inverse_pi_1 = new TYPE_INDEX[BUCKET_SIZE*(H+2)];
+    inversePermutation(pi_1, inverse_pi_1, BUCKET_SIZE*(H+2));
+
+    //create permutation pi_2
+    for (TYPE_INDEX i = 0; i < BUCKET_SIZE*(H+2); i++)
+    {
+        pi_2[i] = inverse_pi_1[this->evict_pi[i]];
+    }
+    
+    return 0;
+}
+
+void ClientDuetORAM::generateRandomPermutation(TYPE_INDEX* permutation, TYPE_INDEX size)
+{
+    iota(permutation, permutation+size, 0);
+    random_shuffle(permutation, permutation+size);
+}
+
+void ClientDuetORAM::inversePermutation(TYPE_INDEX* permutation, TYPE_INDEX* inverse, TYPE_INDEX size)
+{
+    for (TYPE_ID i = 0; i < size; i++)
+    {
+        inverse[permutation[i]] = i;
+    }
+}
 
 
 

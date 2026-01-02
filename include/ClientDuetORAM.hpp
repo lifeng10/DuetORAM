@@ -6,6 +6,7 @@
 #include "zmq.hpp"
 #include "struct_socket.h"
 #include "SecretSharedShuffle.hpp"
+#include "struct_block.h"
 
 class ClientDuetORAM {
 private:
@@ -35,6 +36,28 @@ private:
 
     //variables for eviction
     TYPE_INDEX numEvict;
+    TYPE_INDEX* u1;
+    TYPE_INDEX* u2;
+    block* permutationAa;       //punctured matrix of A
+    block* permutationBb;       //punctured matrix of B
+    TYPE_INDEX* sub_pi_1;
+    TYPE_INDEX* sub_pi_2;
+    TYPE_INDEX* circularShift_1;
+    TYPE_INDEX* circularShift_2;
+    block** key_permutation_buffer_out;   //buffer to send permutation keys to servers
+    TYPE_INDEX* evict_pi;              // permutation indices for eviction
+    TYPE_INDEX SIZE_PI;
+
+    unsigned char** evict_buffer_out;
+
+
+
+    // preprocessed data for eviction   //NOTE: offline process
+    vector<struct_block> blocks;    //store blocks that need to be eviction from the path pathID
+    block key3;                     // secret key for permutation
+    block key4;                     // secret key for permutation
+
+
 public:
     ClientDuetORAM();
     ~ClientDuetORAM();
@@ -45,10 +68,24 @@ public:
     int load();
     int access(TYPE_ID blockID);
     int sendORAMTree();
+    int sendInitialPermutation(block** key_permutation_buffer_out);
+
+
+    // read blocks
+    TYPE_INDEX P(TYPE_INDEX pathID, int l);
+    TYPE_INDEX getSibling(TYPE_INDEX pIDl);
+    int readBucket(TYPE_INDEX bucketID);
+    int readSiblingBucket(TYPE_INDEX bucketID);
 
 
     //retrieval vector
     int getLogicalVector(uint8_t* logicVector, TYPE_ID blockID);
+
+
+    //eviction
+    int createSubPermutation(TYPE_INDEX* pi_1, TYPE_INDEX* pi_2);
+    void generateRandomPermutation(TYPE_INDEX* permutation, TYPE_INDEX size);
+    void inversePermutation(TYPE_INDEX* permutation, TYPE_INDEX* inverse, TYPE_INDEX size);
 
 
     // socket

@@ -14,6 +14,7 @@ public:
     int getFullPathIdx(TYPE_INDEX* fullPath, TYPE_INDEX pathID);
     string getEvictString(TYPE_ID n_evict);
     int getEvictIdx (TYPE_INDEX *srcIdx, TYPE_INDEX *destIdx, TYPE_INDEX *siblIdx, string str_evict);
+    TYPE_INDEX getEvictLeafID(TYPE_INDEX n_evict);
 };
 
 
