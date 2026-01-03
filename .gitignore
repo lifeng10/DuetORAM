@@ -2,3 +2,4 @@ data/
 lib/
 .vscode
 build/
+test_eviction_bug.md

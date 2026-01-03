@@ -134,6 +134,22 @@ int ClientDuetORAM::init() {
     ORAM.build(this->pos_map, this->metaData, this->k1, this->k2);
     end = time_now;
 
+    //FIXME:=====================DEBUG======================
+    cout << "DEBUG: pos_map and metaData after init" << endl;
+    cout << "pos_map:" << endl;
+    for (TYPE_ID i = 1; i <= NUM_BLOCK; i++) {
+            cout << "Block " << i << ": pathID=" << pos_map[i].pathID << ", pathIdx=" << pos_map[i].pathIdx << ", iv1=" << pos_map[i].iv1 << ", iv2=" << pos_map[i].iv2 << endl;
+    }
+    cout << "metaData:" << endl;
+    for (int i = 0; i < NUM_NODES; i++) {
+        cout << "Bucket " << i << ": [";
+        for(int j=0; j<BUCKET_SIZE; j++) {
+            cout << metaData[i][j] << (j==BUCKET_SIZE-1?"":", ");
+        }
+        cout << "]" << endl;
+    }
+    //=================================================
+
     cout<<endl;
     cout<< "Elapsed Time for Setup on Disk: "<<std::chrono::duration_cast<std::chrono::nanoseconds>(end-start).count()<<" ns"<<endl;
     cout<<endl;
@@ -356,8 +372,7 @@ int ClientDuetORAM::access(TYPE_ID blockID)
     block iv1 = pos_map[blockID].iv1;
     block iv2 = pos_map[blockID].iv2;
 	cout << "	[ClientTripORAM] PathID = " << pathID <<endl;
-    cout << "	[ClientTripORAM] Location = " << pos_map[blockID].pathIdx <<endl;
-
+    cout << "	[ClientTripORAM] Location = " << pos_map[blockID].pathIdx <<endl;    cout << "\t[ClientTripORAM] Expected at layer " << (pathIdx / BUCKET_SIZE) << ", slot " << (pathIdx % BUCKET_SIZE) << endl;
     // 2. create select query
 	uint8_t logicVector[(H+1)*BUCKET_SIZE];
 	
@@ -418,6 +433,7 @@ int ClientDuetORAM::access(TYPE_ID blockID)
     TYPE_DATA* keystream_2 = new TYPE_DATA[DATA_CHUNKS];
     memset(keystream_2,0,sizeof(TYPE_DATA)*DATA_CHUNKS);
 
+    cout << "\t[ClientDuetORAM] Decrypting with iv1: " << iv1 << ", iv2: " << iv2 << endl;
     aes_128_ctr<TYPE_DATA>(k1, iv1, nullptr, (uint8_t*)keystream_1, sizeof(TYPE_DATA)*DATA_CHUNKS);
     aes_128_ctr<TYPE_DATA>(k2, iv2, nullptr, (uint8_t*)keystream_2, sizeof(TYPE_DATA)*DATA_CHUNKS);
 
@@ -425,6 +441,8 @@ int ClientDuetORAM::access(TYPE_ID blockID)
     {
         recoveredBlock[i] = retrievedShare[0][i] ^ retrievedShare[1][i] ^ keystream_1[i] ^ keystream_2[i];
     }
+    cout << "\t[ClientDuetORAM] Retrieved shares: S1[0]=" << retrievedShare[0][0] << ", S2[0]=" << retrievedShare[1][0] << endl;
+    cout << "\t[ClientDuetORAM] After XOR with keystreams: recovered[0]=" << recoveredBlock[0] << endl;
 
     end = time_now;
     cout<< "	[ClientDuetORAM] Recovery Done in " << std::chrono::duration_cast<std::chrono::nanoseconds>(end-start).count()<< " ns"<<endl;
@@ -439,6 +457,12 @@ int ClientDuetORAM::access(TYPE_ID blockID)
     assert(recoveredBlock[0] == blockID && "ERROR: RECEIEVED BLOCK IS NOT CORRECT!!!!!!");
 
     // 6. update position map
+    // clear old metadata
+    TYPE_INDEX fullPathIdx[H+1];
+    ORAM.getFullPathIdx(fullPathIdx,pathID);
+    this->metaData[fullPathIdx[pos_map[blockID].pathIdx / BUCKET_SIZE ]][pos_map[blockID].pathIdx % BUCKET_SIZE] = 0; //对应的block位置清空
+
+    // assign new random position
     pos_map[blockID].pathID = Utils::RandBound(N_leaf)+(N_leaf-1);
     pos_map[blockID].pathIdx = numRead;
     this->metaData[0][numRead] = blockID;
@@ -494,9 +518,57 @@ int ClientDuetORAM::access(TYPE_ID blockID)
 	cout << "================================================================" << endl;
 
 
+    //FIXME:=====================DEBUG======================
+    cout << "DEBUG: pos_map and metaData after access " << blockID << endl;
+    cout << "pos_map:" << endl;
+    for (TYPE_ID i = 1; i <= NUM_BLOCK; i++) {
+            cout << "Block " << i << ": pathID=" << pos_map[i].pathID << ", pathIdx=" << pos_map[i].pathIdx << ", iv1=" << pos_map[i].iv1 << ", iv2=" << pos_map[i].iv2 << endl;
+    }
+    cout << "metaData:" << endl;
+    for (int i = 0; i < NUM_NODES; i++) {
+        cout << "Bucket " << i << ": [";
+        for(int j=0; j<BUCKET_SIZE; j++) {
+            cout << metaData[i][j] << (j==BUCKET_SIZE-1?"":", ");
+        }
+        cout << "]" << endl;
+    }
+    //=================================================
+
+    
+
     // 9. Perform eviction if needed
     if (this->numRead == 0)
     {
+        //FIXME:=====================DEBUG======================
+        cout << "DEBUG: pos_map and metaData before eviction" << endl;
+        cout << "pos_map:" << endl;
+        for (TYPE_ID i = 1; i <= NUM_BLOCK; i++) {
+             cout << "Block " << i << ": pathID=" << pos_map[i].pathID << ", pathIdx=" << pos_map[i].pathIdx << ", iv1=" << pos_map[i].iv1 << ", iv2=" << pos_map[i].iv2 << endl;
+        }
+        cout << "metaData:" << endl;
+        for (int i = 0; i < NUM_NODES; i++) {
+            cout << "Bucket " << i << ": [";
+            for(int j=0; j<BUCKET_SIZE; j++) {
+                cout << metaData[i][j] << (j==BUCKET_SIZE-1?"":", ");
+            }
+            cout << "]" << endl;
+        }
+        //=================================================
+
+        //FIXME:=====================DEBUG======================
+        cout << "=========================================================================" << endl;
+        cout << "====================================================================" << endl;
+        cout << "====================================================================" << endl;
+        cout << "====================================================================" << endl;
+        cout << "!!!! ENCRYPTION KEYS (k1 and k2) !!!!" << endl;
+        cout << "!!!! k1 = " << this->k1 << " !!!!" << endl;
+        cout << "!!!! k2 = " << this->k2 << " !!!!" << endl;
+        cout << "=========================================================================" << endl;
+        cout << "====================================================================" << endl;
+        cout << "====================================================================" << endl;
+        cout << "====================================================================" << endl;
+        //=================================================
+
         cout << "================================================================" << endl;
 		cout << "STARTING EVICTION-" << this->numEvict+1 <<endl;
 		cout << "================================================================" << endl;
@@ -512,6 +584,35 @@ int ClientDuetORAM::access(TYPE_ID blockID)
         prg_permutation.random_block(&this->key4, 1);
         sss.initialize(this->key3, this->key4, this->permutationAa, this->permutationBb, this->u1, this->u2);
 
+        //FIXME:=====================DEBUG======================
+        cout << "DEBUG: Permutation keys and matrices:" << endl;
+        cout << "key3 = " << this->key3 << endl;
+        cout << "key4 = " << this->key4 << endl;
+        
+        int perm_size = (H+2)*BUCKET_SIZE*(H+2)*BUCKET_SIZE;
+        cout << "permutationAa (all " << perm_size << " elements):" << endl;
+        for (int i = 0; i < perm_size; i++) {
+            cout << "permutationAa[" << i << "] = " << this->permutationAa[i] << endl;
+        }
+        
+        cout << "permutationBb (all " << perm_size << " elements):" << endl;
+        for (int i = 0; i < perm_size; i++) {
+            cout << "permutationBb[" << i << "] = " << this->permutationBb[i] << endl;
+        }
+        
+        int u_size = (H+2)*BUCKET_SIZE;
+        cout << "u1 (all " << u_size << " elements):" << endl;
+        for (int i = 0; i < u_size; i++) {
+            cout << "u1[" << i << "] = " << this->u1[i] << endl;
+        }
+        
+        cout << "u2 (all " << u_size << " elements):" << endl;
+        for (int i = 0; i < u_size; i++) {
+            cout << "u2[" << i << "] = " << this->u2[i] << endl;
+        }
+        //=================================================
+        
+
         // 9.2 send punctured matrix and secret key to servers
         memcpy(&key_permutation_buffer_out[0][0], &this->key4, sizeof(block));  //NOTE: key4 with permutationAa
         memcpy(&key_permutation_buffer_out[0][1], &permutationAa[0], sizeof(block)*(H+2)*BUCKET_SIZE*(H+2)*BUCKET_SIZE);
@@ -525,18 +626,90 @@ int ClientDuetORAM::access(TYPE_ID blockID)
         blocks.clear();
         // 9.3.1 read blocks from the path and sibling bucket of leaf bucket
         TYPE_INDEX evict_pathID = ORAM.getEvictLeafID(numEvict);
+        cout << "       [Eviction] Evicting path " << evict_pathID << endl;
         TYPE_INDEX pIDH_sibling = getSibling(P(evict_pathID,H));
+        cout << "       [Eviction] Reading sibling bucket " << pIDH_sibling << endl;
         readSiblingBucket(pIDH_sibling);
         for (int i = 0; i < H+1; i++)
         {
-            readBucket(P(evict_pathID, i));
+            TYPE_INDEX bucketID = P(evict_pathID, i);
+            cout << "       [Eviction] Reading path bucket at layer " << i << ": " << bucketID << endl;
+            readBucket(bucketID);
         }
+        cout << "       [Eviction] Total blocks to shuffle: " << blocks.size() << endl;
+
+        //FIXME:=====================DEBUG======================
+        cout << "Blocks Info:" << endl;
+        for (const auto& blk : blocks) {
+            cout << "BlockID: " << blk.blockID << ", PathID: " << blk.pathID << ", PathIdx: " << blk.pathIdx  << "iv1: " << blk.iv1 << "iv2: " << blk.iv2 << endl;
+        }
+        //=====================================================
 
         // 9.3.2 generate shuffle
         block seed_iv1;
         block seed_iv2;
         sss.generateShuffle(this->blocks, evict_pathID, this->evict_pi, this->pos_map, this->metaData, seed_iv1, seed_iv2);
         createSubPermutation(this->sub_pi_1, this->sub_pi_2);
+
+        //FIXME:=====================DEBUG======================
+        cout << "DEBUG: seed_iv1 and seed_iv2:" << endl;
+        cout << "seed_iv1 = " << seed_iv1 << endl;
+        cout << "seed_iv2 = " << seed_iv2 << endl;
+        
+        PRG prg_debug;
+        block* list_iv1_debug = new block[SIZE_PI];
+        block* list_iv2_debug = new block[SIZE_PI];
+        
+        prg_debug.reseed(&seed_iv1);
+        prg_debug.random_block(list_iv1_debug, SIZE_PI);
+        cout << "Random blocks generated from seed_iv1:" << endl;
+        for (int i = 0; i < SIZE_PI; i++) {
+            cout << "list_iv1[" << i << "] = " << list_iv1_debug[i] << endl;
+        }
+        
+        prg_debug.reseed(&seed_iv2);
+        prg_debug.random_block(list_iv2_debug, SIZE_PI);
+        cout << "Random blocks generated from seed_iv2:" << endl;
+        for (int i = 0; i < SIZE_PI; i++) {
+            cout << "list_iv2[" << i << "] = " << list_iv2_debug[i] << endl;
+        }
+        
+        delete[] list_iv1_debug;
+        delete[] list_iv2_debug;
+        //=================================================
+
+        
+
+        //FIXME:=====================DEBUG======================
+        cout << "DEBUG: pos_map and metaData after shuffle" << endl;
+        cout << "pos_map:" << endl;
+        for (TYPE_ID i = 1; i <= NUM_BLOCK; i++) {
+             cout << "Block " << i << ": pathID=" << pos_map[i].pathID << ", pathIdx=" << pos_map[i].pathIdx << ", iv1=" << pos_map[i].iv1 << ", iv2=" << pos_map[i].iv2 << endl;
+        }
+        cout << "metaData:" << endl;
+        for (int i = 0; i < NUM_NODES; i++) {
+            cout << "Bucket " << i << ": [";
+            for(int j=0; j<BUCKET_SIZE; j++) {
+                cout << metaData[i][j] << (j==BUCKET_SIZE-1?"":", ");
+            }
+            cout << "]" << endl;
+        }
+        cout << "Sub Permutation 1:" << endl;
+        for (int i = 0; i < SIZE_PI; i++) {
+            cout << "sub_pi_1[" << i << "] = " << sub_pi_1[i];
+        }
+        cout << "Sub Permutation 2:" << endl;
+        for (int i = 0; i < SIZE_PI; i++) {
+            cout << "sub_pi_2[" << i << "] = " << sub_pi_2[i];
+        }
+        cout << "Combined Permutation (pi_1[pi_2[i]]):" << endl;
+        for (int i = 0; i < SIZE_PI; i++) {
+            cout << "combined[" << i << "] = " << sub_pi_1[sub_pi_2[i]];
+        }
+        //=================================================
+
+
+        
         
         end = time_now;
         cout<< "	[ClientDuetORAM] Evict Permutation Created in " << std::chrono::duration_cast<std::chrono::nanoseconds>(end-start).count()<< " ns"<<endl;
@@ -612,6 +785,7 @@ int ClientDuetORAM::getLogicalVector(uint8_t* logicVector, TYPE_ID blockID)
     TYPE_INDEX loc = pos_map[blockID].pathIdx;
     memset(logicVector, 0, sizeof(uint8_t)*BUCKET_SIZE*(H+1));
     logicVector[loc] = 1;
+    cout << "\t[getLogicalVector] Block " << blockID << ": setting logicVector[" << loc << "] = 1" << endl;
 
     return 0;
 }
@@ -666,6 +840,7 @@ int ClientDuetORAM::sendNrecv(std::string ADDR, unsigned char* data_out, size_t 
 int ClientDuetORAM::readBucket(TYPE_INDEX bucketID)
 {
     struct_block block;
+    cout << "       [ReadBucket] Reading bucket " << bucketID << ": ";
     for (int i = 0; i < BUCKET_SIZE; i++)
     {
         block.blockID = this->metaData[bucketID][i];
@@ -676,8 +851,10 @@ int ClientDuetORAM::readBucket(TYPE_INDEX bucketID)
             block.iv1 = this->pos_map[block.blockID].iv1;
             block.iv2 = this->pos_map[block.blockID].iv2;
             this->blocks.push_back(block);
+            cout << "B" << block.blockID << "(path=" << block.pathID << ",idx=" << block.pathIdx << ") ";
         }
     }
+    cout << endl;
     
     return 0;
 }
