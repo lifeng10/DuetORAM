@@ -1,4 +1,6 @@
 #include "SecretSharedShuffle.hpp"
+#include "CPUFeatures.hpp"
+#include <immintrin.h>
 
 SecretSharedShuffle::SecretSharedShuffle() {
     
@@ -463,12 +465,24 @@ void* SecretSharedShuffle::thread_dotProduct_mask_func(void* args) {
     
     for (int k = opt->start; k < opt->end; k++)
     {
-        TYPE_DATA* masked_send = opt->masked_data_send[k];
-        TYPE_DATA* a_ext = opt->a_extension[k];
-        TYPE_DATA* dot_prod = opt->dot_product_vector[k];
+        TYPE_DATA* __restrict__ masked_send = opt->masked_data_send[k];
+        TYPE_DATA* __restrict__ a_ext = opt->a_extension[k];
+        TYPE_DATA* __restrict__ dot_prod = opt->dot_product_vector[k];
         
-        for (TYPE_INDEX i = 0; i < size; i++)
-        {
+        TYPE_INDEX i = 0;
+        
+        if (CPUFeatures::has_avx2()) {
+            // Vectorized XOR: 4×64-bit per iteration
+            for (; i + 3 < size; i += 4) {
+                __m256i a = _mm256_loadu_si256((__m256i*)&a_ext[i]);
+                __m256i b = _mm256_loadu_si256((__m256i*)&dot_prod[i]);
+                __m256i result = _mm256_xor_si256(a, b);
+                _mm256_storeu_si256((__m256i*)&masked_send[i], result);
+            }
+        }
+        
+        // Remainder
+        for (; i < size; i++) {
             masked_send[i] = a_ext[i] ^ dot_prod[i];
         }
     }
@@ -481,14 +495,29 @@ void* SecretSharedShuffle::thread_dotProduct_local_func(void* args) {
     
     for (int k = opt->start; k < opt->end; k++)
     {
-        TYPE_DATA* local = opt->local_data[k];
-        TYPE_DATA* delta_ext = opt->delta_extension[k];
-        TYPE_DATA* masked_recv = opt->masked_data_recv[k];
-        TYPE_DATA* dot_prod = opt->dot_product_vector[k];
-        TYPE_INDEX* sub_pi = opt->sub_pi;
+        TYPE_DATA* __restrict__ local = opt->local_data[k];
+        TYPE_DATA* __restrict__ delta_ext = opt->delta_extension[k];
+        TYPE_DATA* __restrict__ masked_recv = opt->masked_data_recv[k];
+        TYPE_DATA* __restrict__ dot_prod = opt->dot_product_vector[k];
+        TYPE_INDEX* __restrict__ sub_pi = opt->sub_pi;
         
-        for (TYPE_INDEX i = 0; i < size; i++)
-        {
+        // Permutation access pattern - hard to vectorize effectively
+        // Use scalar with manual unrolling
+        TYPE_INDEX i = 0;
+        for (; i + 3 < size; i += 4) {
+            TYPE_INDEX pi_idx0 = sub_pi[i+0];
+            TYPE_INDEX pi_idx1 = sub_pi[i+1];
+            TYPE_INDEX pi_idx2 = sub_pi[i+2];
+            TYPE_INDEX pi_idx3 = sub_pi[i+3];
+            
+            local[i+0] = delta_ext[i+0] ^ masked_recv[pi_idx0] ^ dot_prod[pi_idx0];
+            local[i+1] = delta_ext[i+1] ^ masked_recv[pi_idx1] ^ dot_prod[pi_idx1];
+            local[i+2] = delta_ext[i+2] ^ masked_recv[pi_idx2] ^ dot_prod[pi_idx2];
+            local[i+3] = delta_ext[i+3] ^ masked_recv[pi_idx3] ^ dot_prod[pi_idx3];
+        }
+        
+        // Remainder
+        for (; i < size; i++) {
             TYPE_INDEX pi_idx = sub_pi[i];
             local[i] = delta_ext[i] ^ masked_recv[pi_idx] ^ dot_prod[pi_idx];
         }

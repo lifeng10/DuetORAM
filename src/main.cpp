@@ -1,10 +1,16 @@
 #include "config.h"
 #include "ClientDuetORAM.hpp"
 #include "ServerDuetORAM.hpp"
+#include "CPUFeatures.hpp"
 
 unsigned int nthreads = std::thread::hardware_concurrency();  // Returns the number of concurrent threads supported by the implementation. The value should be considered only a hint.
 
 int main(){
+    // Display CPU features at startup
+    cout << endl;
+    CPUFeatures::print_features();
+    cout << endl;
+    
     // Create directories
     string mkdir_cmd = "mkdir -p ";
     string mkdir_localState = mkdir_cmd + clientLocalDir;
