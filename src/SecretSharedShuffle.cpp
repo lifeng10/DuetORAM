@@ -22,20 +22,6 @@ int SecretSharedShuffle::generateShuffle(vector<struct_block> blocks, TYPE_INDEX
     prg.reseed(&seed_iv2);
     prg.random_block(list_iv2, BUCKET_SIZE*(H+2));
 
-    // //FIXME:=====================DEBUG======================
-    // cout << "DEBUG: Seeds and IVs in generateShuffle:" << endl;
-    // cout << "seed_iv1 = " << seed_iv1 << endl;
-    // cout << "seed_iv2 = " << seed_iv2 << endl;
-    // cout << "list_iv1:" << endl;
-    // for (int i = 0; i < BUCKET_SIZE*(H+2); i++) {
-    //     cout << "list_iv1[" << i << "] = " << list_iv1[i] << endl;
-    // }
-    // cout << "list_iv2:" << endl;
-    // for (int i = 0; i < BUCKET_SIZE*(H+2); i++) {
-    //     cout << "list_iv2[" << i << "] = " << list_iv2[i] << endl;
-    // }
-    // //=================================================
-
     
 
     for (int l = H; l >= 0; l--)
@@ -63,7 +49,6 @@ int SecretSharedShuffle::generateShuffle(vector<struct_block> blocks, TYPE_INDEX
                     pos_map[block_inS.blockID].iv1 = list_iv1[BUCKET_SIZE * l + counter];
                     pos_map[block_inS.blockID].iv2 = list_iv2[BUCKET_SIZE * l + counter];
                     metaData[pIDl][counter] = block_inS.blockID;
-                    // cout << "       [Shuffle] Block " << block_inS.blockID << " at leaf layer: shuffle_idx=" << (BUCKET_SIZE * l + counter) << ", bucket=" << pIDl << ", slot=" << counter << endl;
                     counter++;
                 }
                 
@@ -106,12 +91,10 @@ int SecretSharedShuffle::generateShuffle(vector<struct_block> blocks, TYPE_INDEX
                     blocks_evicted.push_back(block_inS);
                     pi[BUCKET_SIZE * l + counter] = block_inS.pathIdx;
                     pos_map[block_inS.blockID].pathID = block_inS.pathID;
-                    // 修复：块写入第 l+1 层的兄弟节点，所以 pathIdx 应该是 (l+1)*BUCKET_SIZE + counter
                     pos_map[block_inS.blockID].pathIdx = BUCKET_SIZE * (l+1) + counter;
                     pos_map[block_inS.blockID].iv1 = list_iv1[BUCKET_SIZE * l + counter];
                     pos_map[block_inS.blockID].iv2 = list_iv2[BUCKET_SIZE * l + counter];
                     metaData[pIDl_plus_1_sibling][counter] = block_inS.blockID;
-                    // cout << "       [Shuffle] Block " << block_inS.blockID << " at layer " << l << ": shuffle_idx=" << (BUCKET_SIZE * l + counter) << ", target_bucket=" << pIDl_plus_1_sibling << " (layer " << (l+1) << "), pathIdx=" << (BUCKET_SIZE * (l+1) + counter) << endl;
                     counter++;
                 }
                 
@@ -172,32 +155,6 @@ int SecretSharedShuffle::generateShuffle(vector<struct_block> blocks, TYPE_INDEX
         }
         
     }
-
-    // //FIXME:=====================DEBUG======================
-    // cout << "Final PI Permutation Before Inverse:" << endl;
-    // for (int i = 0; i < PERM_SIZE; i++) {
-    //     cout << "pi[" << i << "] = " << pi[i] << endl;
-    // }
-    // //=================================================
-
-    // // Compute inverse permutation
-    // TYPE_INDEX* inverse_pi = new TYPE_INDEX[PERM_SIZE];
-    // for (int i = 0; i < PERM_SIZE; i++) {
-    //     inverse_pi[pi[i]] = i;
-    // }
-    
-    // // Copy inverse permutation back to pi
-    // for (int i = 0; i < PERM_SIZE; i++) {
-    //     pi[i] = inverse_pi[i];
-    // }
-    // delete[] inverse_pi;
-
-    // //FIXME:=====================DEBUG======================
-    // cout << "Final PI Permutation After Inverse:" << endl;
-    // for (int i = 0; i < PERM_SIZE; i++) {
-    //     cout << "pi[" << i << "] = " << pi[i] << endl;
-    // }
-    // //=================================================
     
     return 0;
 }
