@@ -126,6 +126,9 @@ int ServerDuetORAM::start() {
     cout<< "[Server] Socket is OPEN on " << this->CLIENT_ADDR << endl;
     socket.bind(this->CLIENT_ADDR.c_str());
 
+    auto start_evict = time_now;
+    auto end_evict = time_now;
+
     while(true)
     {
         cout<< "[Server] Waiting for a Command..." <<endl;
@@ -202,7 +205,10 @@ int ServerDuetORAM::start() {
 				cout << "=================================================================" << endl;
 				cout<< "Receiving Eviction Matrix..." <<endl;
 				cout << "=================================================================" << endl;
+                start_evict = time_now;
 				this->evict(socket);
+                end_evict = time_now;
+                cout<< "	[Server] Eviction Matrix Processed in " << std::chrono::duration_cast<std::chrono::nanoseconds>(end_evict-start_evict).count()<< " ns"<<endl;
 				cout << "=================================================================" << endl;
 				cout<< "[Server] EVICTION and DEGREE REDUCTION DONE!" <<endl;
 				cout << "=================================================================" << endl;
@@ -282,6 +288,7 @@ int ServerDuetORAM::retrieve(zmq::socket_t& socket)
     int ret = 1;
 	
 	auto start = time_now;
+    // COMMUNICATION: 接收检索的信息
 	socket.recv(select_buffer_in,sizeof(TYPE_INDEX)+(H+1)*BUCKET_SIZE*sizeof(TYPE_DATA),0);
 	auto end = time_now;
 	cout<< "	[SendBlock] PathID and Logical Vector RECEIVED in " << std::chrono::duration_cast<std::chrono::nanoseconds>(end-start).count() << " ns" <<endl;
@@ -370,6 +377,7 @@ int ServerDuetORAM::retrieve(zmq::socket_t& socket)
 
     start = time_now;
     cout<< "	[SendBlock] Sending Block Share with ID-" << sumBlock[0] <<endl;
+    // COMMUNICATION: 返回检索结果
     socket.send(block_buffer_out,sizeof(TYPE_DATA)*DATA_CHUNKS);
     end = time_now;
     cout<< "	[SendBlock] Block Share SENT in " << std::chrono::duration_cast<std::chrono::nanoseconds>(end-start).count() <<endl;
@@ -446,6 +454,7 @@ int ServerDuetORAM::recvBlock(zmq::socket_t& socket)
 {
     cout<< "	[recvBlock] Receiving Block Data..." <<endl;
 	auto start = time_now;
+    // COMMUNICATION: 接收更新的block信息
 	socket.recv(block_buffer_in, sizeof(TYPE_DATA)*DATA_CHUNKS+sizeof(TYPE_INDEX)+sizeof(block), 0);
     auto end = time_now;
     TYPE_INDEX slotIdx;
@@ -502,6 +511,7 @@ int ServerDuetORAM::recvBlock(zmq::socket_t& socket)
 int ServerDuetORAM::recvInitialPermutation(zmq::socket_t& socket)
 {
     int ret = 1;
+    // COMMUNICATION: 接收初始的随机密钥和穿刺矩阵 (Offline Phase)
     socket.recv(key_permutation_buffer_in, sizeof(block)*(1+ (H+2)*BUCKET_SIZE * (H+2)*BUCKET_SIZE),0);
     socket.send((unsigned char*)CMD_SUCCESS, sizeof(CMD_SUCCESS), 0);
     cout<< "	[recvInitialPermutation] ACK is SENT!" <<endl;
@@ -557,6 +567,7 @@ int ServerDuetORAM::evict(zmq::socket_t& socket)
 
     cout<< "	[evict] Receiving Evict Information..." <<endl;;
 	auto start = time_now;
+    // COMMUNICATION: 接收驱逐的信息
     socket.recv(evict_buffer_in, sizeof(TYPE_INDEX) + sizeof(block) + 3 * sizeof(TYPE_INDEX) * SIZE_PI,0);
     auto end = time_now;
     cout<< "	[evict] RECEIVED! in " << std::chrono::duration_cast<std::chrono::nanoseconds>(end-start).count() <<endl;

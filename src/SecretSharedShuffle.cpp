@@ -240,6 +240,7 @@ int SecretSharedShuffle::secretShare(TYPE_INDEX serverNo, int numThreads, TYPE_I
         socket.send((unsigned char*)CMD_SUCCESS, sizeof(CMD_SUCCESS));
 
         // receive shares
+        // COMMUNICATION: 接收另一个服务器发送过来的masked data
         socket.recv(message_recv, sizeof(TYPE_DATA)*DATA_CHUNKS*SIZE_PI, 0);
 
         //parse shares into TYPE_DATA
@@ -316,6 +317,7 @@ int SecretSharedShuffle::secretShare(TYPE_INDEX serverNo, int numThreads, TYPE_I
             memcpy(&message_send[i*sizeof(TYPE_DATA)*SIZE_PI], masked_data_send[i], sizeof(TYPE_DATA)*SIZE_PI);
         }
 
+        //COMMUNICATION: 发送masked data给另一个服务器
         socket.send(message_send, sizeof(TYPE_DATA)*DATA_CHUNKS*SIZE_PI);
         socket.recv(buffer, sizeof(CMD_SUCCESS));
         cout << "   [Secret Shared Shuflle] Secret Shared Shuffle is Finished!" << endl;

@@ -378,9 +378,8 @@ int ClientDuetORAM::access(TYPE_ID blockID)
     {
         memcpy(&vector_buffer_out[i][0], &pathID, sizeof(pathID));
         memcpy(&vector_buffer_out[i][sizeof(pathID)], &this->sharedVector[i][0], (H+1)*BUCKET_SIZE*sizeof(uint8_t));
-
+        // COMMUNICATION: 发送查询请求
         thread_args[i] = struct_socket(SERVER_ADDR[i]+ ":" + std::to_string(SERVER_PORT+i*NUM_SERVERS+i), vector_buffer_out[i], sizeof(pathID)+(H+1)*BUCKET_SIZE*sizeof(uint8_t), blocks_buffer_in[i], sizeof(TYPE_DATA)*DATA_CHUNKS, CMD_REQUEST_BLOCK, NULL);
-
         pthread_create(&thread_sockets[i], NULL, &ClientDuetORAM::thread_socket_func, (void*)&thread_args[i]);
     }
     
@@ -474,7 +473,8 @@ int ClientDuetORAM::access(TYPE_ID blockID)
     
     // 8. upload the share to numRead-th slot in root bucket
     for(TYPE_INDEX k = 0; k < NUM_SERVERS; k++) 
-    {
+    {   
+        // COMMUNICATION: 发送更新的block信息
         thread_args[k] = struct_socket(SERVER_ADDR[k]+ ":" + std::to_string(SERVER_PORT+k*NUM_SERVERS+k), block_buffer_out[k], sizeof(TYPE_DATA)*DATA_CHUNKS+sizeof(TYPE_INDEX)+sizeof(block), NULL, 0, CMD_SEND_BLOCK,NULL);
 
 		pthread_create(&thread_sockets[k], NULL, &ClientDuetORAM::thread_socket_func, (void*)&thread_args[k]);
@@ -519,6 +519,7 @@ int ClientDuetORAM::access(TYPE_ID blockID)
         memcpy(&key_permutation_buffer_out[0][1], &permutationAa[0], sizeof(block)*(H+2)*BUCKET_SIZE*(H+2)*BUCKET_SIZE);
         memcpy(&key_permutation_buffer_out[1][0], &this->key3, sizeof(block));  //NOTE: key3 with permutationBb
         memcpy(&key_permutation_buffer_out[1][1], &permutationBb[0], sizeof(block)*(H+2)*BUCKET_SIZE*(H+2)*BUCKET_SIZE);
+        // COMMUNICATION: 离线发送穿刺矩阵和密钥
         sendInitialPermutation(this->key_permutation_buffer_out);
         cout << "   [sendInitialPermutation] SENDING INITIALIZE PERMUTATION MATRICES FINISHED!" <<endl; 
 
@@ -569,6 +570,7 @@ int ClientDuetORAM::access(TYPE_ID blockID)
         // 9.5 send eviction information to servers
         for (int i = 0; i < NUM_SERVERS; i++)
         {
+            // COMMUNICATION: 发送驱逐信息
             thread_args[i] = struct_socket(SERVER_ADDR[i] + ":" + std::to_string(SERVER_PORT+i*NUM_SERVERS+i), evict_buffer_out[i], sizeof(TYPE_INDEX) + sizeof(block) + 3 * sizeof(TYPE_INDEX) * SIZE_PI, NULL, 0, CMD_SEND_EVICT, NULL);
             pthread_create(&thread_sockets[i], NULL, &ClientDuetORAM::thread_socket_func, (void*)&thread_args[i]);
         }
