@@ -22,19 +22,19 @@ int SecretSharedShuffle::generateShuffle(vector<struct_block> blocks, TYPE_INDEX
     prg.reseed(&seed_iv2);
     prg.random_block(list_iv2, BUCKET_SIZE*(H+2));
 
-    //FIXME:=====================DEBUG======================
-    cout << "DEBUG: Seeds and IVs in generateShuffle:" << endl;
-    cout << "seed_iv1 = " << seed_iv1 << endl;
-    cout << "seed_iv2 = " << seed_iv2 << endl;
-    cout << "list_iv1:" << endl;
-    for (int i = 0; i < BUCKET_SIZE*(H+2); i++) {
-        cout << "list_iv1[" << i << "] = " << list_iv1[i] << endl;
-    }
-    cout << "list_iv2:" << endl;
-    for (int i = 0; i < BUCKET_SIZE*(H+2); i++) {
-        cout << "list_iv2[" << i << "] = " << list_iv2[i] << endl;
-    }
-    //=================================================
+    // //FIXME:=====================DEBUG======================
+    // cout << "DEBUG: Seeds and IVs in generateShuffle:" << endl;
+    // cout << "seed_iv1 = " << seed_iv1 << endl;
+    // cout << "seed_iv2 = " << seed_iv2 << endl;
+    // cout << "list_iv1:" << endl;
+    // for (int i = 0; i < BUCKET_SIZE*(H+2); i++) {
+    //     cout << "list_iv1[" << i << "] = " << list_iv1[i] << endl;
+    // }
+    // cout << "list_iv2:" << endl;
+    // for (int i = 0; i < BUCKET_SIZE*(H+2); i++) {
+    //     cout << "list_iv2[" << i << "] = " << list_iv2[i] << endl;
+    // }
+    // //=================================================
 
     
 
@@ -63,7 +63,7 @@ int SecretSharedShuffle::generateShuffle(vector<struct_block> blocks, TYPE_INDEX
                     pos_map[block_inS.blockID].iv1 = list_iv1[BUCKET_SIZE * l + counter];
                     pos_map[block_inS.blockID].iv2 = list_iv2[BUCKET_SIZE * l + counter];
                     metaData[pIDl][counter] = block_inS.blockID;
-                    cout << "       [Shuffle] Block " << block_inS.blockID << " at leaf layer: shuffle_idx=" << (BUCKET_SIZE * l + counter) << ", bucket=" << pIDl << ", slot=" << counter << endl;
+                    // cout << "       [Shuffle] Block " << block_inS.blockID << " at leaf layer: shuffle_idx=" << (BUCKET_SIZE * l + counter) << ", bucket=" << pIDl << ", slot=" << counter << endl;
                     counter++;
                 }
                 
@@ -111,7 +111,7 @@ int SecretSharedShuffle::generateShuffle(vector<struct_block> blocks, TYPE_INDEX
                     pos_map[block_inS.blockID].iv1 = list_iv1[BUCKET_SIZE * l + counter];
                     pos_map[block_inS.blockID].iv2 = list_iv2[BUCKET_SIZE * l + counter];
                     metaData[pIDl_plus_1_sibling][counter] = block_inS.blockID;
-                    cout << "       [Shuffle] Block " << block_inS.blockID << " at layer " << l << ": shuffle_idx=" << (BUCKET_SIZE * l + counter) << ", target_bucket=" << pIDl_plus_1_sibling << " (layer " << (l+1) << "), pathIdx=" << (BUCKET_SIZE * (l+1) + counter) << endl;
+                    // cout << "       [Shuffle] Block " << block_inS.blockID << " at layer " << l << ": shuffle_idx=" << (BUCKET_SIZE * l + counter) << ", target_bucket=" << pIDl_plus_1_sibling << " (layer " << (l+1) << "), pathIdx=" << (BUCKET_SIZE * (l+1) + counter) << endl;
                     counter++;
                 }
                 
@@ -173,12 +173,12 @@ int SecretSharedShuffle::generateShuffle(vector<struct_block> blocks, TYPE_INDEX
         
     }
 
-    //FIXME:=====================DEBUG======================
-    cout << "Final PI Permutation Before Inverse:" << endl;
-    for (int i = 0; i < PERM_SIZE; i++) {
-        cout << "pi[" << i << "] = " << pi[i] << endl;
-    }
-    //=================================================
+    // //FIXME:=====================DEBUG======================
+    // cout << "Final PI Permutation Before Inverse:" << endl;
+    // for (int i = 0; i < PERM_SIZE; i++) {
+    //     cout << "pi[" << i << "] = " << pi[i] << endl;
+    // }
+    // //=================================================
 
     // // Compute inverse permutation
     // TYPE_INDEX* inverse_pi = new TYPE_INDEX[PERM_SIZE];
@@ -500,11 +500,17 @@ int SecretSharedShuffle::secretShare(TYPE_INDEX serverNo, int numThreads, TYPE_I
 
 void* SecretSharedShuffle::thread_dotProduct_mask_func(void* args) {
     THREAD_COMPUTATION* opt = (THREAD_COMPUTATION*) args;
+    const TYPE_INDEX size = BUCKET_SIZE*(H+2);
+    
     for (int k = opt->start; k < opt->end; k++)
     {
-        for (TYPE_INDEX i = 0; i < BUCKET_SIZE*(H+2); i++)
+        TYPE_DATA* masked_send = opt->masked_data_send[k];
+        TYPE_DATA* a_ext = opt->a_extension[k];
+        TYPE_DATA* dot_prod = opt->dot_product_vector[k];
+        
+        for (TYPE_INDEX i = 0; i < size; i++)
         {
-            opt->masked_data_send[k][i] = opt->a_extension[k][i] ^ opt->dot_product_vector[k][i];
+            masked_send[i] = a_ext[i] ^ dot_prod[i];
         }
     }
     pthread_exit((void*)opt);
@@ -512,11 +518,20 @@ void* SecretSharedShuffle::thread_dotProduct_mask_func(void* args) {
 
 void* SecretSharedShuffle::thread_dotProduct_local_func(void* args) {
     THREAD_COMPUTATION* opt = (THREAD_COMPUTATION*) args;
+    const TYPE_INDEX size = BUCKET_SIZE*(H+2);
+    
     for (int k = opt->start; k < opt->end; k++)
     {
-        for (TYPE_INDEX i = 0; i < BUCKET_SIZE*(H+2); i++)
+        TYPE_DATA* local = opt->local_data[k];
+        TYPE_DATA* delta_ext = opt->delta_extension[k];
+        TYPE_DATA* masked_recv = opt->masked_data_recv[k];
+        TYPE_DATA* dot_prod = opt->dot_product_vector[k];
+        TYPE_INDEX* sub_pi = opt->sub_pi;
+        
+        for (TYPE_INDEX i = 0; i < size; i++)
         {
-            opt->local_data[k][i] = opt->delta_extension[k][i] ^ opt->masked_data_recv[k][opt->sub_pi[i]] ^ opt->dot_product_vector[k][opt->sub_pi[i]];
+            TYPE_INDEX pi_idx = sub_pi[i];
+            local[i] = delta_ext[i] ^ masked_recv[pi_idx] ^ dot_prod[pi_idx];
         }
     }
     pthread_exit((void*)opt);

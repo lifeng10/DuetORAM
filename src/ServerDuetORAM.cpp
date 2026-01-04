@@ -378,37 +378,37 @@ int ServerDuetORAM::retrieve(zmq::socket_t& socket)
     cout<< "	[SendBlock] Block Share SENT in " << std::chrono::duration_cast<std::chrono::nanoseconds>(end-start).count() <<endl;
     server_logs[3] = std::chrono::duration_cast<std::chrono::nanoseconds>(end-start).count();
 
-    //FIXME:=====================DEBUG======================
-    cout << "DEBUG: Blocks and IVs on retrieval path for Server-" << this->serverNo << ":" << endl;
+    // //FIXME:=====================DEBUG======================
+    // cout << "DEBUG: Blocks and IVs on retrieval path for Server-" << this->serverNo << ":" << endl;
     
-    // Read and display block data from path
-    for (int layer = 0; layer <= H; layer++) {
-        cout << "Layer " << layer << ", Bucket " << fullPathIdx[layer] << ":" << endl;
-        cout << "  Blocks (first element): [";
-        for (int slot = 0; slot < BUCKET_SIZE; slot++) {
-            cout << this->dot_product_vector[0][layer*BUCKET_SIZE + slot];
-            if (slot < BUCKET_SIZE-1) cout << ", ";
-        }
-        cout << "]" << endl;
-    }
+    // // Read and display block data from path
+    // for (int layer = 0; layer <= H; layer++) {
+    //     cout << "Layer " << layer << ", Bucket " << fullPathIdx[layer] << ":" << endl;
+    //     cout << "  Blocks (first element): [";
+    //     for (int slot = 0; slot < BUCKET_SIZE; slot++) {
+    //         cout << this->dot_product_vector[0][layer*BUCKET_SIZE + slot];
+    //         if (slot < BUCKET_SIZE-1) cout << ", ";
+    //     }
+    //     cout << "]" << endl;
+    // }
     
-    // Read and display IVs from path
-    block* ivs_debug = new block[BUCKET_SIZE*(H+1)];
-    for (int layer = 0; layer <= H; layer++) {
-        FILE* file_iv_debug = NULL;
-        string path_iv_debug = rootPath + "client_iv" + to_string(this->serverNo+1) + "/" + to_string(fullPathIdx[layer]);
-        if((file_iv_debug = fopen(path_iv_debug.c_str(),"rb")) != NULL) {
-            fread(&ivs_debug[layer*BUCKET_SIZE], 1, BUCKET_SIZE*sizeof(block), file_iv_debug);
-            fclose(file_iv_debug);
+    // // Read and display IVs from path
+    // block* ivs_debug = new block[BUCKET_SIZE*(H+1)];
+    // for (int layer = 0; layer <= H; layer++) {
+    //     FILE* file_iv_debug = NULL;
+    //     string path_iv_debug = rootPath + "client_iv" + to_string(this->serverNo+1) + "/" + to_string(fullPathIdx[layer]);
+    //     if((file_iv_debug = fopen(path_iv_debug.c_str(),"rb")) != NULL) {
+    //         fread(&ivs_debug[layer*BUCKET_SIZE], 1, BUCKET_SIZE*sizeof(block), file_iv_debug);
+    //         fclose(file_iv_debug);
             
-            cout << "Layer " << layer << ", Bucket " << fullPathIdx[layer] << " IVs:" << endl;
-            for (int slot = 0; slot < BUCKET_SIZE; slot++) {
-                cout << "  iv[" << slot << "] = " << ivs_debug[layer*BUCKET_SIZE + slot] << endl;
-            }
-        }
-    }
-    delete[] ivs_debug;
-    //=================================================
+    //         cout << "Layer " << layer << ", Bucket " << fullPathIdx[layer] << " IVs:" << endl;
+    //         for (int slot = 0; slot < BUCKET_SIZE; slot++) {
+    //             cout << "  iv[" << slot << "] = " << ivs_debug[layer*BUCKET_SIZE + slot] << endl;
+    //         }
+    //     }
+    // }
+    // delete[] ivs_debug;
+    // //=================================================
 
     
 
@@ -560,16 +560,16 @@ int ServerDuetORAM::recvInitialPermutation(zmq::socket_t& socket)
     memcpy(this->receivedPuncturedPermutation, &key_permutation_buffer_in[1], sizeof(block)*((H+2)*BUCKET_SIZE * (H+2)*BUCKET_SIZE));
     cout<< "	[recvInitialPermutation] Sparsing key_permutation_buffer_in into key and punctured permutation is finished!" <<endl;
 
-    //FIXME:=====================DEBUG======================
-    cout << "DEBUG: Received keytoPermutation and receivedPuncturedPermutation for Server-" << this->serverNo << ":" << endl;
-    cout << "keytoPermutation = " << this->keytoPermutation << endl;
+    // //FIXME:=====================DEBUG======================
+    // cout << "DEBUG: Received keytoPermutation and receivedPuncturedPermutation for Server-" << this->serverNo << ":" << endl;
+    // cout << "keytoPermutation = " << this->keytoPermutation << endl;
     
-    int perm_size = (H+2)*BUCKET_SIZE*(H+2)*BUCKET_SIZE;
-    cout << "receivedPuncturedPermutation (all " << perm_size << " elements):" << endl;
-    for (int i = 0; i < perm_size; i++) {
-        cout << "receivedPuncturedPermutation[" << i << "] = " << this->receivedPuncturedPermutation[i] << endl;
-    }
-    //==================================================
+    // int perm_size = (H+2)*BUCKET_SIZE*(H+2)*BUCKET_SIZE;
+    // cout << "receivedPuncturedPermutation (all " << perm_size << " elements):" << endl;
+    // for (int i = 0; i < perm_size; i++) {
+    //     cout << "receivedPuncturedPermutation[" << i << "] = " << this->receivedPuncturedPermutation[i] << endl;
+    // }
+    // //==================================================
 
     ret = 0;
 
@@ -592,20 +592,20 @@ int ServerDuetORAM::evict(zmq::socket_t& socket)
     TYPE_INDEX evict_pathID;
     PRG prg;
 
-    //FIXME:=====================DEBUG======================
-    cout << "==========================================================================" << endl;
-    cout << "DEBUG: At the START of evict() for Server-" << this->serverNo << endl;
-    cout << "keytoPermutation = " << this->keytoPermutation << endl;
-    cout << "First 10 elements of receivedPuncturedPermutation:" << endl;
-    for (int i = 0; i < 10; i++) {
-        cout << "receivedPuncturedPermutation[" << i << "] = " << this->receivedPuncturedPermutation[i] << endl;
-    }
-    cout << "First 10 elements of fullPermutation:" << endl;
-    for (int i = 0; i < 10; i++) {
-        cout << "fullPermutation[" << i << "] = " << this->fullPermutation[i] << endl;
-    }
-    cout << "==========================================================================" << endl;
-    //=================================================
+    // //FIXME:=====================DEBUG======================
+    // cout << "==========================================================================" << endl;
+    // cout << "DEBUG: At the START of evict() for Server-" << this->serverNo << endl;
+    // cout << "keytoPermutation = " << this->keytoPermutation << endl;
+    // cout << "First 10 elements of receivedPuncturedPermutation:" << endl;
+    // for (int i = 0; i < 10; i++) {
+    //     cout << "receivedPuncturedPermutation[" << i << "] = " << this->receivedPuncturedPermutation[i] << endl;
+    // }
+    // cout << "First 10 elements of fullPermutation:" << endl;
+    // for (int i = 0; i < 10; i++) {
+    //     cout << "fullPermutation[" << i << "] = " << this->fullPermutation[i] << endl;
+    // }
+    // cout << "==========================================================================" << endl;
+    // //==================================================
 
     cout<< "	[evict] Receiving Evict Information..." <<endl;;
 	auto start = time_now;
@@ -661,17 +661,17 @@ int ServerDuetORAM::evict(zmq::socket_t& socket)
 	long load_time = std::chrono::duration_cast<std::chrono::nanoseconds>(end-start).count();
     cout<< "	[evict] Path Nodes READ from Disk in " << load_time << " ns"<<endl;
 
-    //FIXME:=====================DEBUG======================
-    cout << "DEBUG: evict_vector for Server-" << this->serverNo << ":" << endl;
-    for (int i = 0; i < DATA_CHUNKS; i++) {
-        cout << "evict_vector[" << i << "]: [";
-        for (int j = 0; j < BUCKET_SIZE*(H+2); j++) {
-            cout << evict_vector[i][j];
-            if (j < BUCKET_SIZE*(H+2)-1) cout << ", ";
-        }
-        cout << "]" << endl;
-    }
-    //=================================================
+    // //FIXME:=====================DEBUG======================
+    // cout << "DEBUG: evict_vector for Server-" << this->serverNo << ":" << endl;
+    // for (int i = 0; i < DATA_CHUNKS; i++) {
+    //     cout << "evict_vector[" << i << "]: [";
+    //     for (int j = 0; j < BUCKET_SIZE*(H+2); j++) {
+    //         cout << evict_vector[i][j];
+    //         if (j < BUCKET_SIZE*(H+2)-1) cout << ", ";
+    //     }
+    //     cout << "]" << endl;
+    // }
+    // //=================================================
 
     
 
@@ -698,48 +698,54 @@ int ServerDuetORAM::evict(zmq::socket_t& socket)
         fclose(file_iv);
     }
 
-    //FIXME:=====================DEBUG======================
-    cout << "DEBUG: ivs for Server-" << this->serverNo << ":" << endl;
-    for (int i = 0; i < BUCKET_SIZE*(H+2); i++) {
-        cout << "ivs[" << i << "] = " << ivs[i] << endl;
-    }
-    //=================================================
+    // //FIXME:=====================DEBUG======================
+    // cout << "DEBUG: ivs for Server-" << this->serverNo << ":" << endl;
+    // for (int i = 0; i < BUCKET_SIZE*(H+2); i++) {
+    //     cout << "ivs[" << i << "] = " << ivs[i] << endl;
+    // }
+    // //=================================================
 
     
     
-    // 3. 根据iv计算密钥流 //NOTE:注意，这里生成的密钥流矩阵和元素矩阵是互为转置的
+    // 3. 根据iv计算密钥流 //NOTE:注意，这里生成的密钥流矩阵和元素矩阵是互为转置的 (optimized with OpenMP parallelization)
     TYPE_DATA** keystream = new TYPE_DATA* [BUCKET_SIZE*(H+2)];
     for (int i = 0 ; i < BUCKET_SIZE*(H+2); i++)
     {
         keystream[i] = new TYPE_DATA[DATA_CHUNKS];
+    }
+    
+    // Parallelize keystream generation - each thread generates keystream independently
+    #pragma omp parallel for schedule(static)
+    for (int i = 0 ; i < BUCKET_SIZE*(H+2); i++)
+    {
         memset(keystream[i],0,sizeof(TYPE_DATA)*DATA_CHUNKS);
         aes_128_ctr<TYPE_DATA>(this->mask_key, ivs[i], nullptr, (uint8_t*)keystream[i], sizeof(TYPE_DATA)*DATA_CHUNKS);
     }
 
-    //FIXME:=====================DEBUG======================
-    cout << "DEBUG: keystream for Server-" << this->serverNo << ":" << endl;
-    for (int i = 0; i < BUCKET_SIZE*(H+2); i++) {
-        cout << "keystream[" << i << "]: [";
-        for (int j = 0; j < DATA_CHUNKS; j++) {
-            cout << keystream[i][j];
-            if (j < DATA_CHUNKS-1) cout << ", ";
-        }
-        cout << "]" << endl;
-    }
-    //=================================================
+    // //FIXME:=====================DEBUG======================
+    // cout << "DEBUG: keystream for Server-" << this->serverNo << ":" << endl;
+    // for (int i = 0; i < BUCKET_SIZE*(H+2); i++) {
+    //     cout << "keystream[" << i << "]: [";
+    //     for (int j = 0; j < DATA_CHUNKS; j++) {
+    //         cout << keystream[i][j];
+    //         if (j < DATA_CHUNKS-1) cout << ", ";
+    //     }
+    //     cout << "]" << endl;
+    // }
+    // //=================================================
 
-    //FIXME:=====================DEBUG======================
-    cout << "=========================================================================" << endl;
-    cout << "=========================================================================" << endl;
-    cout << "=========================================================================" << endl;
-    cout << "=========================================================================" << endl;
-    cout << "!!!! MASK_KEY for Server-" << this->serverNo << " !!!!" << endl;
-    cout << "!!!! mask_key = " << this->mask_key << " !!!!" << endl;
-    cout << "=========================================================================" << endl;
-    cout << "=========================================================================" << endl;
-    cout << "=========================================================================" << endl;
-    cout << "=========================================================================" << endl;
-    //=================================================
+    // //FIXME:=====================DEBUG======================
+    // cout << "=========================================================================" << endl;
+    // cout << "=========================================================================" << endl;
+    // cout << "=========================================================================" << endl;
+    // cout << "=========================================================================" << endl;
+    // cout << "!!!! MASK_KEY for Server-" << this->serverNo << " !!!!" << endl;
+    // cout << "!!!! mask_key = " << this->mask_key << " !!!!" << endl;
+    // cout << "=========================================================================" << endl;
+    // cout << "=========================================================================" << endl;
+    // cout << "=========================================================================" << endl;
+    // cout << "=========================================================================" << endl;
+    // //=================================================
 
     
 
@@ -757,44 +763,44 @@ int ServerDuetORAM::evict(zmq::socket_t& socket)
     if (this->serverNo == 0)
     {
         transpose_parallel(keystream, evict_vector_for_shuffle, BUCKET_SIZE*(H+2), DATA_CHUNKS);
-        //FIXME:=====================DEBUG======================
-        cout << "DEBUG: evict_vector_for_shuffle for Server-" << this->serverNo << ":" << endl;
-        for (int i = 0; i < DATA_CHUNKS; i++) {
-            cout << "evict_vector_for_shuffle[" << i << "]: [";
-            for (int j = 0; j < SIZE_PI; j++) {
-                cout << evict_vector_for_shuffle[i][j];
-                if (j < SIZE_PI-1) cout << ", ";
-            }
-            cout << "]" << endl;
-        }
-        //=================================================
+        // //FIXME:=====================DEBUG======================
+        // cout << "DEBUG: evict_vector_for_shuffle for Server-" << this->serverNo << ":" << endl;
+        // for (int i = 0; i < DATA_CHUNKS; i++) {
+        //     cout << "evict_vector_for_shuffle[" << i << "]: [";
+        //     for (int j = 0; j < SIZE_PI; j++) {
+        //         cout << evict_vector_for_shuffle[i][j];
+        //         if (j < SIZE_PI-1) cout << ", ";
+        //     }
+        //     cout << "]" << endl;
+        // }
+        // //=================================================
     }
     if (this->serverNo == 1)
     {
         transpose_parallel(keystream, evict_vector_for_shuffle, BUCKET_SIZE*(H+2), DATA_CHUNKS);
-        //FIXME:=====================DEBUG======================
-        cout << "DEBUG: evict_vector_for_shuffle for Server-" << this->serverNo << ":" << endl;
-        for (int i = 0; i < DATA_CHUNKS; i++) {
-            cout << "evict_vector_for_shuffle[" << i << "]: [";
-            for (int j = 0; j < SIZE_PI; j++) {
-                cout << evict_vector_for_shuffle[i][j];
-                if (j < SIZE_PI-1) cout << ", ";
-            }
-            cout << "]" << endl;
-        }
-        //=================================================
+        // //FIXME:=====================DEBUG======================
+        // cout << "DEBUG: evict_vector_for_shuffle for Server-" << this->serverNo << ":" << endl;
+        // for (int i = 0; i < DATA_CHUNKS; i++) {
+        //     cout << "evict_vector_for_shuffle[" << i << "]: [";
+        //     for (int j = 0; j < SIZE_PI; j++) {
+        //         cout << evict_vector_for_shuffle[i][j];
+        //         if (j < SIZE_PI-1) cout << ", ";
+        //     }
+        //     cout << "]" << endl;
+        // }
+        // //=================================================
         xor_vectors_optimized(evict_vector_for_shuffle, evict_vector, DATA_CHUNKS, BUCKET_SIZE*(H+2));
-        //FIXME:=====================DEBUG======================
-        cout << "DEBUG: evict_vector_for_shuffle (xored!!!) for Server-" << this->serverNo << ":" << endl;
-        for (int i = 0; i < DATA_CHUNKS; i++) {
-            cout << "evict_vector_for_shuffle[" << i << "]: [";
-            for (int j = 0; j < SIZE_PI; j++) {
-                cout << evict_vector_for_shuffle[i][j];
-                if (j < SIZE_PI-1) cout << ", ";
-            }
-            cout << "]" << endl;
-        }
-        //=================================================
+        // //FIXME:=====================DEBUG======================
+        // cout << "DEBUG: evict_vector_for_shuffle (xored!!!) for Server-" << this->serverNo << ":" << endl;
+        // for (int i = 0; i < DATA_CHUNKS; i++) {
+        //     cout << "evict_vector_for_shuffle[" << i << "]: [";
+        //     for (int j = 0; j < SIZE_PI; j++) {
+        //         cout << evict_vector_for_shuffle[i][j];
+        //         if (j < SIZE_PI-1) cout << ", ";
+        //     }
+        //     cout << "]" << endl;
+        // }
+        // //=================================================
     }
 
     
@@ -824,22 +830,29 @@ int ServerDuetORAM::evict(zmq::socket_t& socket)
     //     }
     // }
     
-    // 6. Expansion  //NOTE: Optimization
-    TYPE_DATA rand_data[DATA_CHUNKS];
-    for (int i = 0; i < SIZE_PI * SIZE_PI; i++)
+    // 6. Expansion (optimized with OpenMP parallelization)
+    // Note: Each thread needs its own PRG instance to avoid race conditions
+    #pragma omp parallel
     {
-        prg.reseed(&fullPermutation[i]);
-        prg.random_data_unaligned(rand_data, sizeof(TYPE_DATA)*DATA_CHUNKS);
-        for (int j =0; j < DATA_CHUNKS; j++)
+        PRG prg_local;
+        TYPE_DATA rand_data[DATA_CHUNKS];
+        
+        #pragma omp for schedule(static)
+        for (int i = 0; i < SIZE_PI * SIZE_PI; i++)
         {
-            fullPermutationExpansion[j][i] = rand_data[j];
-        }
+            prg_local.reseed(&fullPermutation[i]);
+            prg_local.random_data_unaligned(rand_data, sizeof(TYPE_DATA)*DATA_CHUNKS);
+            for (int j = 0; j < DATA_CHUNKS; j++)
+            {
+                fullPermutationExpansion[j][i] = rand_data[j];
+            }
 
-        prg.reseed(&receivedPuncturedPermutation[i]);
-        prg.random_data_unaligned(rand_data, sizeof(TYPE_DATA)*DATA_CHUNKS);
-        for (int j = 0; j < DATA_CHUNKS; j++)
-        {
-            puncturedPermutationExpansion[j][i] = rand_data[j];
+            prg_local.reseed(&receivedPuncturedPermutation[i]);
+            prg_local.random_data_unaligned(rand_data, sizeof(TYPE_DATA)*DATA_CHUNKS);
+            for (int j = 0; j < DATA_CHUNKS; j++)
+            {
+                puncturedPermutationExpansion[j][i] = rand_data[j];
+            }
         }
     }
 
@@ -851,84 +864,96 @@ int ServerDuetORAM::evict(zmq::socket_t& socket)
         memset(this->delta[i], 0, sizeof(TYPE_DATA)*SIZE_PI);
     }
 
-    // 6.1 compute a
+    // 6.1 compute a (optimized with OpenMP and reduced array access)
+    #pragma omp parallel for collapse(2) schedule(static)
     for (TYPE_INDEX k = 0; k < DATA_CHUNKS; k++)
     {
         for (TYPE_INDEX j = 0; j < SIZE_PI; j++)
         {
+            TYPE_DATA result = 0;
+            TYPE_DATA* expansion_row = this->fullPermutationExpansion[k];
             for (TYPE_INDEX i = 0; i < SIZE_PI; i++)
             {
-                this->a[k][j] = this->fullPermutationExpansion[k][j+i*SIZE_PI] ^ this->a[k][j];
+                result ^= expansion_row[j + i*SIZE_PI];
             }
-            
+            this->a[k][j] = result;
         }
-        
     }
     
 
-    // 6.2 compute b
+    // 6.2 compute b (optimized with OpenMP and reduced array access)
+    #pragma omp parallel for collapse(2) schedule(static)
     for (TYPE_INDEX k = 0; k < DATA_CHUNKS; k++)
     {
         for (TYPE_INDEX i = 0; i < SIZE_PI; i++)
         {
+            TYPE_DATA result = 0;
+            TYPE_DATA* expansion_row = this->fullPermutationExpansion[k];
+            TYPE_INDEX base_idx = i * SIZE_PI;
             for (TYPE_INDEX j = 0; j < SIZE_PI; j++)
             {
-                this->b[k][i] = this->fullPermutationExpansion[k][i*SIZE_PI + j] ^ this->b[k][i];
+                result ^= expansion_row[base_idx + j];
             }
+            this->b[k][i] = result;
         }
-        
     }
     
 
-    // 6.3 compute delta
+    // 6.3 compute delta (optimized with OpenMP and reduced array access)
+    #pragma omp parallel for collapse(2) schedule(static)
     for (TYPE_INDEX k = 0; k < DATA_CHUNKS; k++)
     {
         for (TYPE_INDEX i = 0; i < SIZE_PI; i++)
         {
+            TYPE_DATA result = 0;
+            TYPE_DATA* punctured_row = this->puncturedPermutationExpansion[k];
+            TYPE_INDEX base_idx = i * SIZE_PI;
+            TYPE_INDEX sub_pi_i = sub_pi[i];
+            
             for (TYPE_INDEX j = 0; j < SIZE_PI; j++)
             {
-                this->delta[k][i] = this->puncturedPermutationExpansion[k][i*SIZE_PI+j] ^ this->delta[k][i];
+                result ^= punctured_row[base_idx + j];
             }
             
             for (TYPE_INDEX j = 0; j < SIZE_PI; j++)
             {
-                this->delta[k][i] = this->puncturedPermutationExpansion[k][j*SIZE_PI + sub_pi[i]] ^ this->delta[k][i];
+                result ^= punctured_row[j * SIZE_PI + sub_pi_i];
             }
             
+            this->delta[k][i] = result;
         }
-        
     }
 
-    //FIXME:=====================DEBUG======================
-    cout << "DEBUG: a, b, and delta for Server-" << this->serverNo << ":" << endl;
-    cout << "a:" << endl;
-    for (int k = 0; k < DATA_CHUNKS; k++) {
-        cout << "a[" << k << "]: [";
-        for (int j = 0; j < SIZE_PI; j++) {
-            cout << this->a[k][j];
-            if (j < SIZE_PI-1) cout << ", ";
-        }
-        cout << "]" << endl;
-    }
-    cout << "b:" << endl;
-    for (int k = 0; k < DATA_CHUNKS; k++) {
-        cout << "b[" << k << "]: [";
-        for (int j = 0; j < SIZE_PI; j++) {
-            cout << this->b[k][j];
-            if (j < SIZE_PI-1) cout << ", ";
-        }
-        cout << "]" << endl;
-    }
-    cout << "delta:" << endl;
-    for (int k = 0; k < DATA_CHUNKS; k++) {
-        cout << "delta[" << k << "]: [";
-        for (int j = 0; j < SIZE_PI; j++) {
-            cout << this->delta[k][j];
-            if (j < SIZE_PI-1) cout << ", ";
-        }
-        cout << "]" << endl;
-    }
-    //=================================================
+    // //FIXME:=====================DEBUG======================
+    // cout << "DEBUG: a, b, and delta for Server-" << this->serverNo << ":" << endl;
+    // cout << "a:" << endl;
+    // for (int k = 0; k < DATA_CHUNKS; k++) {
+    //     cout << "a[" << k << "]: [";
+    //     for (int j = 0; j < SIZE_PI; j++) {
+    //         cout << this->a[k][j];
+    //         if (j < SIZE_PI-1) cout << ", ";
+    //     }
+    //     cout << "]" << endl;
+    // }
+    // cout << "b:" << endl;
+    // for (int k = 0; k < DATA_CHUNKS; k++) {
+    //     cout << "b[" << k << "]: [";
+    //     for (int j = 0; j < SIZE_PI; j++) {
+    //         cout << this->b[k][j];
+    //         if (j < SIZE_PI-1) cout << ", ";
+    //     }
+    //     cout << "]" << endl;
+    // }
+    // cout << "delta:" << endl;
+    // for (int k = 0; k < DATA_CHUNKS; k++) {
+    //     cout << "delta[" << k << "]: [";
+    //     for (int j = 0; j < SIZE_PI; j++) {
+    //         cout << this->delta[k][j];
+    //         if (j < SIZE_PI-1) cout << ", ";
+    //     }
+    //     cout << "]" << endl;
+    // }
+    // //=================================================
 
     
     
@@ -942,17 +967,17 @@ int ServerDuetORAM::evict(zmq::socket_t& socket)
     
     sss.secretShare(this->serverNo, numThreads, this->sub_pi, evict_vector_for_shuffle, this->delta, this->a, this->b, resultShare);
 
-    //FIXME:=====================DEBUG======================
-    cout << "DEBUG: resultShare for Server-" << this->serverNo << ":" << endl;
-    for (int i = 0; i < DATA_CHUNKS; i++) {
-        cout << "resultShare[" << i << "]: [";
-        for (int j = 0; j < SIZE_PI; j++) {
-            cout << resultShare[i][j];
-            if (j < SIZE_PI-1) cout << ", ";
-        }
-        cout << "]" << endl;
-    }
-    //=================================================
+    // //FIXME:=====================DEBUG======================
+    // cout << "DEBUG: resultShare for Server-" << this->serverNo << ":" << endl;
+    // for (int i = 0; i < DATA_CHUNKS; i++) {
+    //     cout << "resultShare[" << i << "]: [";
+    //     for (int j = 0; j < SIZE_PI; j++) {
+    //         cout << resultShare[i][j];
+    //         if (j < SIZE_PI-1) cout << ", ";
+    //     }
+    //     cout << "]" << endl;
+    // }
+    // //=================================================
 
     
     
@@ -963,12 +988,12 @@ int ServerDuetORAM::evict(zmq::socket_t& socket)
     cout << "    [evict] Server-" << this->serverNo << " generated " << SIZE_PI << " new IVs from seed: " << this->seed_iv << endl;
     cout << "    [evict] First new IV: " << list_iv[0] << ", Last new IV: " << list_iv[SIZE_PI-1] << endl;
 
-    //FIXME:=====================DEBUG======================
-    cout << "DEBUG: list_iv contents for Server-" << this->serverNo << ":" << endl;
-    for (int i = 0; i < SIZE_PI; i++) {
-        cout << "list_iv[" << i << "] = " << list_iv[i] << endl;
-    }
-    //=================================================
+    // //FIXME:=====================DEBUG======================
+    // cout << "DEBUG: list_iv contents for Server-" << this->serverNo << ":" << endl;
+    // for (int i = 0; i < SIZE_PI; i++) {
+    //     cout << "list_iv[" << i << "] = " << list_iv[i] << endl;
+    // }
+    // //=================================================
 
     // 8.1 dot_product_vector_xored用于存放服务器之间交互的信息，即异或后的路径信息
     TYPE_DATA** dot_product_vector_xored_in = new TYPE_DATA*[DATA_CHUNKS];      // 存放从其他服务器发送的经过XOR的路径信息
@@ -981,21 +1006,30 @@ int ServerDuetORAM::evict(zmq::socket_t& socket)
         memset(dot_product_vector_xored_in[i],0,sizeof(TYPE_DATA)*SIZE_PI);
     }
 
-    // 8.2 计算密钥流
+    // 8.2 计算密钥流 (optimized with OpenMP parallelization)
     TYPE_DATA ** key_stream_for_exchange = new TYPE_DATA*[SIZE_PI];
     for (TYPE_INDEX i = 0; i < SIZE_PI; i++)
     {
         key_stream_for_exchange[i] = new TYPE_DATA[DATA_CHUNKS];
+    }
+    
+    // Parallelize keystream generation
+    #pragma omp parallel for schedule(static)
+    for (TYPE_INDEX i = 0; i < SIZE_PI; i++)
+    {
         memset(key_stream_for_exchange[i],0,sizeof(TYPE_DATA)*DATA_CHUNKS);
         aes_128_ctr<TYPE_DATA>(this->mask_key, list_iv[i], nullptr, (uint8_t*)key_stream_for_exchange[i], sizeof(TYPE_DATA)*DATA_CHUNKS);
     }
     
-    // 8.3 计算用于交换的信息
+    // 8.3 计算用于交换的信息 (optimized with OpenMP parallelization)
+    #pragma omp parallel for schedule(static)
     for (TYPE_INDEX i = 0; i < DATA_CHUNKS; i++)
     {
+        TYPE_DATA* result_row = resultShare[i];
+        TYPE_DATA* xored_row = dot_product_vector_xored[i];
         for (TYPE_INDEX j = 0; j < SIZE_PI; j++)
         {
-            dot_product_vector_xored[i][j] = resultShare[i][j] ^ key_stream_for_exchange[j][i];
+            xored_row[j] = result_row[j] ^ key_stream_for_exchange[j][i];
         }
     }
 
@@ -1180,53 +1214,53 @@ int ServerDuetORAM::evict(zmq::socket_t& socket)
     fwrite(&list_iv[(H+1)*BUCKET_SIZE], 1, sizeof(block)*BUCKET_SIZE, file_out_iv);
     fclose(file_out_iv);
     
-    //FIXME:=====================DEBUG======================
-    cout << "DEBUG: Write-back data and IVs for Server-" << this->serverNo << ":" << endl;
+    // //FIXME:=====================DEBUG======================
+    // cout << "DEBUG: Write-back data and IVs for Server-" << this->serverNo << ":" << endl;
     
-    // Debug output for sibling buckets (layers 0 to H-1)
-    for (int l = 0; l < H; l++) {
-        num_bucket = sss.getSibling(fullPathIdx[l+1]);
-        cout << "Shuffle Layer " << l << " -> Bucket " << num_bucket << " (sibling of " << fullPathIdx[l+1] << "):" << endl;
-        cout << "  Blocks (first element): [";
-        for (int slot = 0; slot < BUCKET_SIZE; slot++) {
-            cout << dot_product_vector_xored[0][l*BUCKET_SIZE + slot];
-            if (slot < BUCKET_SIZE-1) cout << ", ";
-        }
-        cout << "]" << endl;
-        cout << "  IVs:" << endl;
-        for (int slot = 0; slot < BUCKET_SIZE; slot++) {
-            cout << "    iv[" << slot << "] = " << list_iv[l*BUCKET_SIZE + slot] << endl;
-        }
-    }
+    // // Debug output for sibling buckets (layers 0 to H-1)
+    // for (int l = 0; l < H; l++) {
+    //     num_bucket = sss.getSibling(fullPathIdx[l+1]);
+    //     cout << "Shuffle Layer " << l << " -> Bucket " << num_bucket << " (sibling of " << fullPathIdx[l+1] << "):" << endl;
+    //     cout << "  Blocks (first element): [";
+    //     for (int slot = 0; slot < BUCKET_SIZE; slot++) {
+    //         cout << dot_product_vector_xored[0][l*BUCKET_SIZE + slot];
+    //         if (slot < BUCKET_SIZE-1) cout << ", ";
+    //     }
+    //     cout << "]" << endl;
+    //     cout << "  IVs:" << endl;
+    //     for (int slot = 0; slot < BUCKET_SIZE; slot++) {
+    //         cout << "    iv[" << slot << "] = " << list_iv[l*BUCKET_SIZE + slot] << endl;
+    //     }
+    // }
     
-    // Debug output for leaf bucket
-    num_bucket = fullPathIdx[H];
-    cout << "Shuffle Layer " << H << " -> Bucket " << num_bucket << " (leaf):" << endl;
-    cout << "  Blocks (first element): [";
-    for (int slot = 0; slot < BUCKET_SIZE; slot++) {
-        cout << dot_product_vector_xored[0][H*BUCKET_SIZE + slot];
-        if (slot < BUCKET_SIZE-1) cout << ", ";
-    }
-    cout << "]" << endl;
-    cout << "  IVs:" << endl;
-    for (int slot = 0; slot < BUCKET_SIZE; slot++) {
-        cout << "    iv[" << slot << "] = " << list_iv[H*BUCKET_SIZE + slot] << endl;
-    }
+    // // Debug output for leaf bucket
+    // num_bucket = fullPathIdx[H];
+    // cout << "Shuffle Layer " << H << " -> Bucket " << num_bucket << " (leaf):" << endl;
+    // cout << "  Blocks (first element): [";
+    // for (int slot = 0; slot < BUCKET_SIZE; slot++) {
+    //     cout << dot_product_vector_xored[0][H*BUCKET_SIZE + slot];
+    //     if (slot < BUCKET_SIZE-1) cout << ", ";
+    // }
+    // cout << "]" << endl;
+    // cout << "  IVs:" << endl;
+    // for (int slot = 0; slot < BUCKET_SIZE; slot++) {
+    //     cout << "    iv[" << slot << "] = " << list_iv[H*BUCKET_SIZE + slot] << endl;
+    // }
     
-    // Debug output for root bucket
-    num_bucket = fullPathIdx[0];
-    cout << "Shuffle Layer " << (H+1) << " -> Bucket " << num_bucket << " (root):" << endl;
-    cout << "  Blocks (first element): [";
-    for (int slot = 0; slot < BUCKET_SIZE; slot++) {
-        cout << dot_product_vector_xored[0][(H+1)*BUCKET_SIZE + slot];
-        if (slot < BUCKET_SIZE-1) cout << ", ";
-    }
-    cout << "]" << endl;
-    cout << "  IVs:" << endl;
-    for (int slot = 0; slot < BUCKET_SIZE; slot++) {
-        cout << "    iv[" << slot << "] = " << list_iv[(H+1)*BUCKET_SIZE + slot] << endl;
-    }
-    //=================================================
+    // // Debug output for root bucket
+    // num_bucket = fullPathIdx[0];
+    // cout << "Shuffle Layer " << (H+1) << " -> Bucket " << num_bucket << " (root):" << endl;
+    // cout << "  Blocks (first element): [";
+    // for (int slot = 0; slot < BUCKET_SIZE; slot++) {
+    //     cout << dot_product_vector_xored[0][(H+1)*BUCKET_SIZE + slot];
+    //     if (slot < BUCKET_SIZE-1) cout << ", ";
+    // }
+    // cout << "]" << endl;
+    // cout << "  IVs:" << endl;
+    // for (int slot = 0; slot < BUCKET_SIZE; slot++) {
+    //     cout << "    iv[" << slot << "] = " << list_iv[(H+1)*BUCKET_SIZE + slot] << endl;
+    // }
+    // //=================================================
     
     end = time_now;
     cout<< "	[SendBlock] Eviction time in " << std::chrono::duration_cast<std::chrono::nanoseconds>(end-start).count() <<endl;
