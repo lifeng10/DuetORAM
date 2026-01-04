@@ -521,6 +521,30 @@ int ServerDuetORAM::generatePermutationOffline(const block& keytoPermutation, bl
     prg.reseed(&keytoPermutation);
     prg.random_block(fullPermutation, (H+2)*BUCKET_SIZE * (H+2)*BUCKET_SIZE);
 
+    #pragma omp parallel
+    {
+        PRG prg_local;
+        TYPE_DATA rand_data[DATA_CHUNKS];
+        
+        #pragma omp for schedule(static)
+        for (int i = 0; i < SIZE_PI * SIZE_PI; i++)
+        {
+            prg_local.reseed(&fullPermutation[i]);
+            prg_local.random_data_unaligned(rand_data, sizeof(TYPE_DATA)*DATA_CHUNKS);
+            for (int j = 0; j < DATA_CHUNKS; j++)
+            {
+                fullPermutationExpansion[j][i] = rand_data[j];
+            }
+
+            prg_local.reseed(&receivedPuncturedPermutation[i]);
+            prg_local.random_data_unaligned(rand_data, sizeof(TYPE_DATA)*DATA_CHUNKS);
+            for (int j = 0; j < DATA_CHUNKS; j++)
+            {
+                puncturedPermutationExpansion[j][i] = rand_data[j];
+            }
+        }
+    }
+
     return 0;
 }
 
@@ -650,29 +674,29 @@ int ServerDuetORAM::evict(zmq::socket_t& socket)
     
     // 6. Expansion (optimized with OpenMP parallelization)
     // Note: Each thread needs its own PRG instance to avoid race conditions
-    #pragma omp parallel
-    {
-        PRG prg_local;
-        TYPE_DATA rand_data[DATA_CHUNKS];
+    // #pragma omp parallel
+    // {
+    //     PRG prg_local;
+    //     TYPE_DATA rand_data[DATA_CHUNKS];
         
-        #pragma omp for schedule(static)
-        for (int i = 0; i < SIZE_PI * SIZE_PI; i++)
-        {
-            prg_local.reseed(&fullPermutation[i]);
-            prg_local.random_data_unaligned(rand_data, sizeof(TYPE_DATA)*DATA_CHUNKS);
-            for (int j = 0; j < DATA_CHUNKS; j++)
-            {
-                fullPermutationExpansion[j][i] = rand_data[j];
-            }
+    //     #pragma omp for schedule(static)
+    //     for (int i = 0; i < SIZE_PI * SIZE_PI; i++)
+    //     {
+    //         prg_local.reseed(&fullPermutation[i]);
+    //         prg_local.random_data_unaligned(rand_data, sizeof(TYPE_DATA)*DATA_CHUNKS);
+    //         for (int j = 0; j < DATA_CHUNKS; j++)
+    //         {
+    //             fullPermutationExpansion[j][i] = rand_data[j];
+    //         }
 
-            prg_local.reseed(&receivedPuncturedPermutation[i]);
-            prg_local.random_data_unaligned(rand_data, sizeof(TYPE_DATA)*DATA_CHUNKS);
-            for (int j = 0; j < DATA_CHUNKS; j++)
-            {
-                puncturedPermutationExpansion[j][i] = rand_data[j];
-            }
-        }
-    }
+    //         prg_local.reseed(&receivedPuncturedPermutation[i]);
+    //         prg_local.random_data_unaligned(rand_data, sizeof(TYPE_DATA)*DATA_CHUNKS);
+    //         for (int j = 0; j < DATA_CHUNKS; j++)
+    //         {
+    //             puncturedPermutationExpansion[j][i] = rand_data[j];
+    //         }
+    //     }
+    // }
 
     //FIXME: Clear a, b, delta before computation to avoid using old values from previous eviction
     for (int i = 0; i < DATA_CHUNKS; i++)
@@ -1025,36 +1049,76 @@ void ServerDuetORAM::xor_vectors_optimized(TYPE_DATA** vec_a, TYPE_DATA** vec_b,
     }
 }
 
+// void ServerDuetORAM::efficient_rotate()
+// {
+//     // 1. 定义别名，消除重复逻辑
+//     // 如果是 Server0: arr1 是 received, arr2 是 full
+//     // 如果是 Server1: arr1 是 full,     arr2 是 received
+//     auto* arr1 = (this->serverNo == 0) ? receivedPuncturedPermutation : fullPermutation;
+//     auto* arr2 = (this->serverNo == 0) ? fullPermutation : receivedPuncturedPermutation;
+
+//     // 2. 并行处理第一个数组 (基于 circularShift_1)
+//     // 使用 static 调度，因为每次旋转的工作量是相同的（假设 SIZE_PI 固定）
+//     #pragma omp parallel for schedule(static)
+//     for (int i = 0; i < SIZE_PI; i++)
+//     {
+//         // 算出当前行的起始和结束指针
+//         auto start = arr1 + i * SIZE_PI;
+//         auto end   = start + SIZE_PI;
+//         auto mid   = end - circularShift_1[i]; // 右移 k 位 = rotate(start, end-k, end)
+        
+//         std::rotate(start, mid, end);
+//     }
+
+//     // 3. 并行处理第二个数组 (基于 circularShift_2)
+//     #pragma omp parallel for schedule(static)
+//     for (int j = 0; j < SIZE_PI; j++)
+//     {
+//         auto start = arr2 + j * SIZE_PI;
+//         auto end   = start + SIZE_PI;
+//         auto mid   = end - circularShift_2[j];
+        
+//         std::rotate(start, mid, end);
+//     }
+// }
+
 void ServerDuetORAM::efficient_rotate()
 {
     // 1. 定义别名，消除重复逻辑
-    // 如果是 Server0: arr1 是 received, arr2 是 full
-    // 如果是 Server1: arr1 是 full,     arr2 是 received
-    auto* arr1 = (this->serverNo == 0) ? receivedPuncturedPermutation : fullPermutation;
-    auto* arr2 = (this->serverNo == 0) ? fullPermutation : receivedPuncturedPermutation;
+    // 如果是 Server0: arr1 是 puncturedPermutationExpansion, arr2 是 fullPermutationExpansion
+    // 如果是 Server1: arr1 是 fullPermutationExpansion,     arr2 是 puncturedPermutationExpansion
+    TYPE_DATA** arr1 = (this->serverNo == 0) ? puncturedPermutationExpansion : fullPermutationExpansion;
+    TYPE_DATA** arr2 = (this->serverNo == 0) ? fullPermutationExpansion : puncturedPermutationExpansion;
 
     // 2. 并行处理第一个数组 (基于 circularShift_1)
-    // 使用 static 调度，因为每次旋转的工作量是相同的（假设 SIZE_PI 固定）
-    #pragma omp parallel for schedule(static)
-    for (int i = 0; i < SIZE_PI; i++)
+    // 对每个 DATA_CHUNKS 行都执行相同的循环移位
+    // collapse(2) 将两层循环合并并行，提高并行度
+    #pragma omp parallel for collapse(2) schedule(static)
+    for (int k = 0; k < DATA_CHUNKS; k++)
     {
-        // 算出当前行的起始和结束指针
-        auto start = arr1 + i * SIZE_PI;
-        auto end   = start + SIZE_PI;
-        auto mid   = end - circularShift_1[i]; // 右移 k 位 = rotate(start, end-k, end)
-        
-        std::rotate(start, mid, end);
+        for (int i = 0; i < SIZE_PI; i++)
+        {
+            // 算出当前行的起始和结束指针
+            auto start = arr1[k] + i * SIZE_PI;
+            auto end   = start + SIZE_PI;
+            auto mid   = end - circularShift_1[i]; // 右移 k 位 = rotate(start, end-k, end)
+            
+            std::rotate(start, mid, end);
+        }
     }
 
     // 3. 并行处理第二个数组 (基于 circularShift_2)
-    #pragma omp parallel for schedule(static)
-    for (int j = 0; j < SIZE_PI; j++)
+    #pragma omp parallel for collapse(2) schedule(static)
+    for (int k = 0; k < DATA_CHUNKS; k++)
     {
-        auto start = arr2 + j * SIZE_PI;
-        auto end   = start + SIZE_PI;
-        auto mid   = end - circularShift_2[j];
-        
-        std::rotate(start, mid, end);
+        for (int j = 0; j < SIZE_PI; j++)
+        {
+            auto start = arr2[k] + j * SIZE_PI;
+            auto end   = start + SIZE_PI;
+            auto mid   = end - circularShift_2[j];
+            
+            std::rotate(start, mid, end);
+        }
     }
 }
 
