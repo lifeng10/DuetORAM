@@ -30,9 +30,12 @@ int DuetORAM::build(TYPE_POS_MAP* pos_map, TYPE_DATA** metaData, block k1, block
     string path_iv1;
     FILE* file_iv2_out = NULL;
     string path_iv2;
-		
-    cout << "=================================================================" << endl;
-    cout<< "[DuetORAM] Creating Buckets on Disk" << endl;
+	
+    // NOTE: 注释调输出信息以加快初始化速度
+    // ======================================================NOTE:======================================================
+    // cout << "=================================================================" << endl;
+    // cout<< "[DuetORAM] Creating Buckets on Disk" << endl;
+    // ======================================================NOTE:======================================================
 
     boost::progress_display show_progress2(NUM_NODES);
 

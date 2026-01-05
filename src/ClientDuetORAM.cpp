@@ -1,7 +1,7 @@
 #include "ClientDuetORAM.hpp"
 #include "DuetORAM.hpp"
 
-unsigned long int ClientDuetORAM::exp_logs[9];
+unsigned long int ClientDuetORAM::exp_logs[19];
 unsigned long int ClientDuetORAM::thread_max = 0; //用于记录执行线程的时间。因为有多个线程，只记录耗时最长的线程所用的时间
 char ClientDuetORAM::timestamp[16];
 
@@ -87,6 +87,38 @@ ClientDuetORAM::ClientDuetORAM() {
     {
         this->evict_buffer_out[i] = new unsigned char[sizeof(TYPE_INDEX) + sizeof(block) + 3 * sizeof(TYPE_INDEX) * SIZE_PI];
     }
+
+    time_t now = time(0);
+	char* dt = ctime(&now);
+	FILE* file_out = NULL;
+	string path = clientLocalDir + "lastest_config";
+	string info = "Height of Tree: " + to_string(HEIGHT) + "\n";
+	info += "Number of Blocks: " + to_string(NUM_BLOCK) + "\n";
+	info += "Bucket Size: " + to_string(BUCKET_SIZE) + "\n";
+	info += "Eviction Rate: " + to_string(EVICT_RATE) + "\n";
+	info += "Block Size (B): " + to_string(BLOCK_SIZE) + "\n";
+	info += "ID Size (B): " + to_string(sizeof(TYPE_ID)) + "\n";
+	info += "Number of Chunks: " + to_string(DATA_CHUNKS) + "\n";
+	info += "Total Size of Data (MB): " + to_string((NUM_BLOCK*(BLOCK_SIZE+sizeof(TYPE_ID)))/1048576.0) + "\n";
+	info += "Total Size of ORAM (MB): " + to_string(BUCKET_SIZE*NUM_NODES*(BLOCK_SIZE+sizeof(TYPE_ID))/1048576.0) + "\n";
+	
+	#if defined(PRECOMP_MODE)
+		info += "PRECOMPUTATION MODE: Active\n";
+	#else
+		info += "PRECOMPUTATION MODE: Inactive\n";
+	#endif 
+	
+	if((file_out = fopen(path.c_str(),"w+")) == NULL){
+		cout<< "	File Cannot be Opened!!" <<endl;
+		exit;
+	}
+	fputs(dt, file_out);
+	fputs(info.c_str(), file_out);
+	fclose(file_out);
+	
+	tm *now_time = localtime(&now);
+	if(now != -1)
+		strftime(timestamp,16,"%d%m_%H%M",now_time);
     
 }
 
@@ -95,6 +127,11 @@ ClientDuetORAM::~ClientDuetORAM() {
 }
 
 int ClientDuetORAM::init() {
+    auto start = time_now;
+    auto end = time_now;
+
+    start = time_now;
+
     this->numRead = 0;
     this->numEvict = 0;
     PRG().random_block(&this->k1, 1);
@@ -119,17 +156,14 @@ int ClientDuetORAM::init() {
         }
         fclose(key_out);
     }
-    
-
-    auto start = time_now;
-    auto end = time_now;
+      
 
     for (TYPE_INDEX i = 1; i <= NUM_BLOCK; i++) {
         this->pos_map[i].pathID = -1;
         this->pos_map[i].pathIdx = -1;
     }
 
-    start = time_now;
+    
     DuetORAM ORAM;
     ORAM.build(this->pos_map, this->metaData, this->k1, this->k2);
     end = time_now;
@@ -175,6 +209,8 @@ int ClientDuetORAM::sendORAMTree() {
 
     zmq::context_t context(1);
     zmq::socket_t socket(context,ZMQ_REQ);
+
+    auto start = time_now;
 
     for (int i = 0; i < NUM_SERVERS; i++)
     {
@@ -245,6 +281,9 @@ int ClientDuetORAM::sendORAMTree() {
         socket.disconnect( ADDR.c_str());
     }
     socket.close();
+
+    auto end = time_now;
+    cout<< "	[sendORAMTree] ORAM Tree SENT in " << std::chrono::duration_cast<std::chrono::nanoseconds>(end-start).count() << " ns"<<endl;
 
     return 0;
 }
@@ -351,13 +390,15 @@ int ClientDuetORAM::access(TYPE_ID blockID)
     block iv1 = pos_map[blockID].iv1;
     block iv2 = pos_map[blockID].iv2;
 	cout << "	[ClientTripORAM] PathID = " << pathID <<endl;
-    cout << "	[ClientTripORAM] Location = " << pos_map[blockID].pathIdx <<endl;    cout << "\t[ClientTripORAM] Expected at layer " << (pathIdx / BUCKET_SIZE) << ", slot " << (pathIdx % BUCKET_SIZE) << endl;
-    // 2. create select query
+    cout << "	[ClientTripORAM] Location = " << pos_map[blockID].pathIdx <<endl;
 	uint8_t logicVector[(H+1)*BUCKET_SIZE];
 	
 	auto start = time_now;
     auto end = time_now;
+    auto start_retrieval = time_now;
+    auto end_retrieval = time_now;
 
+    start_retrieval = time_now;
     start = time_now;
 	getLogicalVector(logicVector, blockID);
 	end = time_now;
@@ -399,9 +440,13 @@ int ClientDuetORAM::access(TYPE_ID blockID)
     }
 
     end = time_now;
+    end_retrieval = time_now;
     cout<< "	[ClientDuetORAM] All Shares Retrieved in " << std::chrono::duration_cast<std::chrono::nanoseconds>(end-start).count()<< " ns"<<endl;
     exp_logs[2] = thread_max;
+    exp_logs[3] = std::chrono::duration_cast<std::chrono::nanoseconds>(end-start).count();
+    exp_logs[4] = std::chrono::duration_cast<std::chrono::nanoseconds>(end_retrieval-start_retrieval).count();
     thread_max = 0;
+
 
     // 5. recover the block
     start = time_now;
@@ -421,7 +466,7 @@ int ClientDuetORAM::access(TYPE_ID blockID)
 
     end = time_now;
     cout<< "	[ClientDuetORAM] Recovery Done in " << std::chrono::duration_cast<std::chrono::nanoseconds>(end-start).count()<< " ns"<<endl;
-	exp_logs[3] = std::chrono::duration_cast<std::chrono::nanoseconds>(end-start).count();
+	exp_logs[5] = std::chrono::duration_cast<std::chrono::nanoseconds>(end-start).count();
 
     cout << "	[ClientDuetORAM] Block-" << recoveredBlock[0] <<" is Retrieved" <<endl;
     if (recoveredBlock[0] == blockID)
@@ -433,6 +478,7 @@ int ClientDuetORAM::access(TYPE_ID blockID)
 
     // 6. update position map
     // clear old metadata
+    start = time_now;
     TYPE_INDEX fullPathIdx[H+1];
     ORAM.getFullPathIdx(fullPathIdx,pathID);
     this->metaData[fullPathIdx[pos_map[blockID].pathIdx / BUCKET_SIZE ]][pos_map[blockID].pathIdx % BUCKET_SIZE] = 0; //对应的block位置清空
@@ -470,8 +516,11 @@ int ClientDuetORAM::access(TYPE_ID blockID)
             memcpy(&block_buffer_out[i][sizeof(TYPE_DATA)*DATA_CHUNKS+sizeof(TYPE_INDEX)], &iv2, sizeof(block));
         }
     }
+    end = time_now;
+    exp_logs[6] = std::chrono::duration_cast<std::chrono::nanoseconds>(end-start).count();
     
     // 8. upload the share to numRead-th slot in root bucket
+    start = time_now;
     for(TYPE_INDEX k = 0; k < NUM_SERVERS; k++) 
     {   
         // COMMUNICATION: 发送更新的block信息
@@ -488,6 +537,8 @@ int ClientDuetORAM::access(TYPE_ID blockID)
         pthread_join(thread_sockets[i], NULL);
         cout << "	[ClientDuetORAM] Block upload completed!" << endl;
     }
+    end = time_now;
+    exp_logs[7] = std::chrono::duration_cast<std::chrono::nanoseconds>(end-start).count();
 
     cout << "================================================================" << endl;
 	cout << "ACCESS OPERATION FOR BLOCK-" << blockID << " COMPLETED." << endl; 
@@ -507,20 +558,26 @@ int ClientDuetORAM::access(TYPE_ID blockID)
         cout << "STARTING INITIALIZE PERMUTATION MATRICES!" <<endl; 
         cout << "================================================================" << endl;
 
+        start = time_now;
         PRG prg_permutation;
         SecretSharedShuffle sss;
         prg_permutation.random_block(&this->key3, 1);
         prg_permutation.random_block(&this->key4, 1);
         sss.initialize(this->key3, this->key4, this->permutationAa, this->permutationBb, this->u1, this->u2);
+        end = time_now;
+        exp_logs[8] = std::chrono::duration_cast<std::chrono::nanoseconds>(end-start).count();
         
 
         // 9.2 send punctured matrix and secret key to servers
+        start = time_now;
         memcpy(&key_permutation_buffer_out[0][0], &this->key4, sizeof(block));  //NOTE: key4 with permutationAa
         memcpy(&key_permutation_buffer_out[0][1], &permutationAa[0], sizeof(block)*(H+2)*BUCKET_SIZE*(H+2)*BUCKET_SIZE);
         memcpy(&key_permutation_buffer_out[1][0], &this->key3, sizeof(block));  //NOTE: key3 with permutationBb
         memcpy(&key_permutation_buffer_out[1][1], &permutationBb[0], sizeof(block)*(H+2)*BUCKET_SIZE*(H+2)*BUCKET_SIZE);
         // COMMUNICATION: 离线发送穿刺矩阵和密钥
         sendInitialPermutation(this->key_permutation_buffer_out);
+        end = time_now;
+        exp_logs[9] = std::chrono::duration_cast<std::chrono::nanoseconds>(end-start).count();
         cout << "   [sendInitialPermutation] SENDING INITIALIZE PERMUTATION MATRICES FINISHED!" <<endl; 
 
         // 9.3 generate shuffle
@@ -544,16 +601,20 @@ int ClientDuetORAM::access(TYPE_ID blockID)
         
         end = time_now;
         cout<< "	[ClientDuetORAM] Evict Permutation Created in " << std::chrono::duration_cast<std::chrono::nanoseconds>(end-start).count()<< " ns"<<endl;
-		exp_logs[5] = std::chrono::duration_cast<std::chrono::nanoseconds>(end-start).count();
+		exp_logs[10] = std::chrono::duration_cast<std::chrono::nanoseconds>(end-start).count();
 
         // 9.4 generate circular shift for shared permutation
+        start = time_now;
         for (TYPE_INDEX j = 0; j < SIZE_PI; j++)
         {
             this->circularShift_1[j] = (this->sub_pi_1[j] - this->u1[j] + SIZE_PI) % SIZE_PI;
             this->circularShift_2[j] = (this->sub_pi_2[j] - this->u2[j] + SIZE_PI) % SIZE_PI;
         }
+        end = time_now;
+        exp_logs[11] = std::chrono::duration_cast<std::chrono::nanoseconds>(end-start).count();
 
         // eviction information for server 0
+        start = time_now;
         memcpy(&evict_buffer_out[0][0], &evict_pathID, sizeof(TYPE_INDEX));
         memcpy(&evict_buffer_out[0][sizeof(TYPE_INDEX)], &seed_iv1, sizeof(block));
         memcpy(&evict_buffer_out[0][sizeof(TYPE_INDEX)+sizeof(block)], &sub_pi_1[0], sizeof(TYPE_INDEX)*SIZE_PI);
@@ -581,9 +642,10 @@ int ClientDuetORAM::access(TYPE_ID blockID)
         }
 
         end = time_now;
+        exp_logs[12] = std::chrono::duration_cast<std::chrono::nanoseconds>(end-start).count();
         cout<< "	[ClientDuetORAM] Eviction Permutation Send in " << std::chrono::duration_cast<std::chrono::nanoseconds>(end-start).count()<< " ns"<<endl;
         
-        exp_logs[8] = thread_max;
+        exp_logs[13] = thread_max;
         thread_max = 0;
 		
 		cout << "================================================================" << endl;
@@ -607,8 +669,8 @@ int ClientDuetORAM::access(TYPE_ID blockID)
 	fclose(local_data);
      
 	// 12. write log
-	Utils::write_list_to_file(to_string(HEIGHT)+"_" + to_string(BLOCK_SIZE)+"_client_" + timestamp + ".txt",logDir, exp_logs, 9);
-	memset(exp_logs, 0, sizeof(unsigned long int)*9);
+	Utils::write_list_to_file(to_string(HEIGHT)+"_" + to_string(BLOCK_SIZE)+"_client_" + timestamp + ".txt",logDir, exp_logs, 19);
+	memset(exp_logs, 0, sizeof(unsigned long int)*19);
         
 
     return 0;

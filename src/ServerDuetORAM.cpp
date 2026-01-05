@@ -14,7 +14,7 @@
 #include "struct_thread_computation.h"
 #include "struct_thread_loadData.h"
 
-unsigned long int ServerDuetORAM::server_logs[13];
+unsigned long int ServerDuetORAM::server_logs[27];
 unsigned long int ServerDuetORAM::thread_max = 0;
 char ServerDuetORAM::timestamp[16];
 
@@ -112,7 +112,11 @@ ServerDuetORAM::ServerDuetORAM(TYPE_INDEX serverNo, int selectedThreads) {
         memset(this->delta[i],0,sizeof(TYPE_DATA)*SIZE_PI);
     }
     
+    time_t rawtime = time(0);
+	tm *now = localtime(&rawtime);
 
+	if(rawtime != -1)
+		strftime(timestamp,16,"%d%m_%H%M",now);
     
 }
 
@@ -131,6 +135,16 @@ int ServerDuetORAM::start() {
 
     auto start_evict = time_now;
     auto end_evict = time_now;
+    auto start_recvORAMTree = time_now;
+    auto end_recvORAMTree = time_now;
+    auto start_retrieve = time_now;
+    auto end_retrieve = time_now;
+    auto start_recvBlock = time_now;
+    auto end_recvBlock = time_now;
+    auto start_recvInitializationPermutation = time_now;
+    auto end_recvInitializationPermutation = time_now;
+    auto start_generatePermutationOffline = time_now;
+    auto end_generatePermutationOffline = time_now;
 
     while(true)
     {
@@ -149,7 +163,10 @@ int ServerDuetORAM::start() {
 				cout << "=================================================================" << endl;
 				cout<< "[Server] Receiving ORAM Data..." <<endl;
 				cout << "=================================================================" << endl;
+                start_recvORAMTree = time_now;
 				this->recvORAMTree(socket);
+                end_recvORAMTree = time_now;
+                server_logs[21] = std::chrono::duration_cast<std::chrono::nanoseconds>(end_recvORAMTree-start_recvORAMTree).count();
 				cout << "=================================================================" << endl;
 				cout<< "[Server] ORAM Data RECEIVED!" <<endl;
 				cout << "=================================================================" << endl;
@@ -171,7 +188,10 @@ int ServerDuetORAM::start() {
 				cout << "=================================================================" << endl;
 				cout<< "[Server] Receiving Logical Vector..." <<endl;
 				cout << "=================================================================" << endl;
+                start_retrieve = time_now;
 				this->retrieve(socket);
+                end_retrieve = time_now;
+                server_logs[22] = std::chrono::duration_cast<std::chrono::nanoseconds>(end_retrieve-start_retrieve).count();
 				cout << "=================================================================" << endl;
 				cout<< "[Server] Block Share SENT" <<endl;
 				cout << "=================================================================" << endl;
@@ -182,7 +202,10 @@ int ServerDuetORAM::start() {
             	cout << "=================================================================" << endl;
 				cout<< "[Server] Receiving Block Data..." <<endl;
 				cout << "=================================================================" << endl;
+                start_recvBlock = time_now;
 				this->recvBlock(socket);
+                end_recvBlock = time_now;
+                server_logs[23] = std::chrono::duration_cast<std::chrono::nanoseconds>(end_recvBlock-start_recvBlock).count();
 				cout << "=================================================================" << endl;
 				cout<< "[Server] Block Data RECEIVED!" <<endl;
 				cout << "=================================================================" << endl;
@@ -193,11 +216,17 @@ int ServerDuetORAM::start() {
                 cout << "=================================================================" << endl;
                 cout<< "[Server] Receiving Initial Random Secret Key and Punctured Permutation..." <<endl;
                 cout << "=================================================================" << endl;
+                start_recvInitializationPermutation = time_now;
                 this->recvInitialPermutation(socket);
+                end_recvInitializationPermutation = time_now;
+                server_logs[24] = std::chrono::duration_cast<std::chrono::nanoseconds>(end_recvInitializationPermutation-start_recvInitializationPermutation).count();
                 cout << "=================================================================" << endl;
                 cout<< "[Server] Initial Random Secret Key and Punctured Permutation RECEIVED!" <<endl;
                 cout << "=================================================================" << endl;
+                start_generatePermutationOffline = time_now;
                 generatePermutationOffline(keytoPermutation, fullPermutation);
+                end_generatePermutationOffline = time_now;
+                server_logs[25] = std::chrono::duration_cast<std::chrono::nanoseconds>(end_generatePermutationOffline-start_generatePermutationOffline).count();
                 cout << "=================================================================" << endl;
                 cout<< "[Server] Full Permutation is Recovered!" <<endl;
                 cout << "=================================================================" << endl;
@@ -211,6 +240,7 @@ int ServerDuetORAM::start() {
                 start_evict = time_now;
 				this->evict(socket);
                 end_evict = time_now;
+                server_logs[26] = std::chrono::duration_cast<std::chrono::nanoseconds>(end_evict-start_evict).count();
                 cout<< "	[Server] Eviction Matrix Processed in " << std::chrono::duration_cast<std::chrono::nanoseconds>(end_evict-start_evict).count()<< " ns"<<endl;
 				cout << "=================================================================" << endl;
 				cout<< "[Server] EVICTION and DEGREE REDUCTION DONE!" <<endl;
@@ -221,6 +251,10 @@ int ServerDuetORAM::start() {
             default:
                 break;
         }
+
+        Utils::write_list_to_file(to_string(HEIGHT) + "_" + to_string(BLOCK_SIZE) + "_server" + to_string(serverNo)+ "_" + timestamp + ".txt",logDir, server_logs, 27);
+	    memset(server_logs, 0, sizeof(unsigned long int)*27);
+
     }
 
     return 0;
@@ -285,8 +319,6 @@ int ServerDuetORAM::recvORAMKey(zmq::socket_t& socket){
 
 int ServerDuetORAM::retrieve(zmq::socket_t& socket)
 {
-    Utils::write_list_to_file(to_string(HEIGHT) + "_" + to_string(BLOCK_SIZE) + "_server" + to_string(serverNo)+ "_" + timestamp + ".txt",logDir, server_logs, 13);
-	memset(server_logs, 0, sizeof(unsigned long int)*13);
 
     int ret = 1;
 	
@@ -297,6 +329,7 @@ int ServerDuetORAM::retrieve(zmq::socket_t& socket)
 	cout<< "	[SendBlock] PathID and Logical Vector RECEIVED in " << std::chrono::duration_cast<std::chrono::nanoseconds>(end-start).count() << " ns" <<endl;
     server_logs[0] = std::chrono::duration_cast<std::chrono::nanoseconds>(end-start).count();
 
+    start = time_now;
     TYPE_INDEX pathID;
 	memcpy(&pathID, select_buffer_in, sizeof(pathID));
 
@@ -316,7 +349,7 @@ int ServerDuetORAM::retrieve(zmq::socket_t& socket)
     cout << endl;
 
     // 1. use thread to load data from files
-    start = time_now;
+    
     int step = ceil((double)DATA_CHUNKS/(double)numThreads);
     int endIdx;
 
@@ -376,9 +409,9 @@ int ServerDuetORAM::retrieve(zmq::socket_t& socket)
     cout<< "	[SendBlock] Block Share CALCULATED in " << std::chrono::duration_cast<std::chrono::nanoseconds>(end-start).count() <<endl;
     server_logs[2] = std::chrono::duration_cast<std::chrono::nanoseconds>(end-start).count();
 
+    start = time_now;
     memcpy(block_buffer_out,sumBlock,sizeof(TYPE_DATA)*DATA_CHUNKS);
 
-    start = time_now;
     cout<< "	[SendBlock] Sending Block Share with ID-" << sumBlock[0] <<endl;
     // COMMUNICATION: 返回检索结果
     socket.send(block_buffer_out,sizeof(TYPE_DATA)*DATA_CHUNKS);
@@ -648,6 +681,7 @@ int ServerDuetORAM::evict(zmq::socket_t& socket)
     cout<< "	[evict] RECEIVED! in " << std::chrono::duration_cast<std::chrono::nanoseconds>(end-start).count() <<endl;
 	server_logs[6] = std::chrono::duration_cast<std::chrono::nanoseconds>(end-start).count();
 
+    start = time_now;
     memcpy(&evict_pathID, &evict_buffer_in[0], sizeof(TYPE_INDEX));
     memcpy(&this->seed_iv, &evict_buffer_in[sizeof(TYPE_INDEX)], sizeof(block));
     memcpy(this->sub_pi, &evict_buffer_in[sizeof(TYPE_INDEX)+sizeof(block)], sizeof(TYPE_INDEX)*SIZE_PI);
@@ -659,7 +693,7 @@ int ServerDuetORAM::evict(zmq::socket_t& socket)
     fullPathIdx[H+1] = sss.getSibling(evict_pathID);
 
     // 1. use thread to load data from files
-    start = time_now;
+    
     int step = ceil((double)DATA_CHUNKS/(double)numThreads);
     int endIdx;
 
@@ -693,9 +727,11 @@ int ServerDuetORAM::evict(zmq::socket_t& socket)
 
     end = time_now;
 	long load_time = std::chrono::duration_cast<std::chrono::nanoseconds>(end-start).count();
+    server_logs[7] = load_time;
     cout<< "	[evict] Path Nodes READ from Disk in " << load_time << " ns"<<endl;
 
     // 2. read iv from files
+    start = time_now;
     block* ivs = new block[BUCKET_SIZE*(H+2)];
     FILE* file_iv = NULL;
     string path_iv;
@@ -717,8 +753,11 @@ int ServerDuetORAM::evict(zmq::socket_t& socket)
         }
         fclose(file_iv);
     }
+    end = time_now;
+    server_logs[8] = std::chrono::duration_cast<std::chrono::nanoseconds>(end-start).count();
     
     // 3. 根据iv计算密钥流 //NOTE:注意，这里生成的密钥流矩阵和元素矩阵是互为转置的 (optimized with AES-NI hardware acceleration)
+    start = time_now;
     TYPE_DATA** keystream = new TYPE_DATA* [BUCKET_SIZE*(H+2)];
     for (int i = 0 ; i < BUCKET_SIZE*(H+2); i++)
     {
@@ -750,8 +789,11 @@ int ServerDuetORAM::evict(zmq::socket_t& socket)
             aes_128_ctr<TYPE_DATA>(this->mask_key, ivs[i], nullptr, (uint8_t*)keystream[i], sizeof(TYPE_DATA)*DATA_CHUNKS);
         }
     }
+    end = time_now;
+    server_logs[9] = std::chrono::duration_cast<std::chrono::nanoseconds>(end-start).count();
 
     // 4. 计算用于shuffle的路径元素。服务器1选择r1,服务器2选择m+r1
+    start = time_now;
     TYPE_DATA** evict_vector_for_shuffle = new TYPE_DATA*[DATA_CHUNKS];
     for(TYPE_INDEX i = 0; i < DATA_CHUNKS; i++)
     {
@@ -769,11 +811,15 @@ int ServerDuetORAM::evict(zmq::socket_t& socket)
         transpose_parallel(keystream, evict_vector_for_shuffle, BUCKET_SIZE*(H+2), DATA_CHUNKS);
         xor_vectors_optimized(evict_vector_for_shuffle, evict_vector, DATA_CHUNKS, BUCKET_SIZE*(H+2));
     }
-
+    end = time_now;
+    server_logs[10] = std::chrono::duration_cast<std::chrono::nanoseconds>(end-start).count();
     
     
     // 5. Circular Shift
+    start = time_now;
     efficient_rotate();
+    end = time_now;
+    server_logs[11] = std::chrono::duration_cast<std::chrono::nanoseconds>(end-start).count();
     
     // 6. Expansion (optimized with OpenMP parallelization)
     // Note: Each thread needs its own PRG instance to avoid race conditions
@@ -811,6 +857,7 @@ int ServerDuetORAM::evict(zmq::socket_t& socket)
 
     // 6.1 compute a (ULTRA-OPTIMIZED v3: AVX2 4-way + prefetching)
     // Strided access pattern: a[j] = XOR(expansion[j + i*SIZE_PI] for all i)
+    start = time_now;
     #pragma omp parallel for schedule(static)
     for (TYPE_INDEX k = 0; k < DATA_CHUNKS; k++)
     {
@@ -912,10 +959,13 @@ int ServerDuetORAM::evict(zmq::socket_t& socket)
             }
         }
     }
+    end = time_now;
+    server_logs[12] = std::chrono::duration_cast<std::chrono::nanoseconds>(end-start).count();
     
 
     // 6.2 compute b (ULTRA-OPTIMIZED v3: AVX2 2×unroll + dual accumulators)
     // Sequential access pattern: b[i] = XOR(expansion[i*SIZE_PI + j] for all j)
+    start = time_now;
     #pragma omp parallel for schedule(static)
     for (TYPE_INDEX k = 0; k < DATA_CHUNKS; k++)
     {
@@ -991,10 +1041,13 @@ int ServerDuetORAM::evict(zmq::socket_t& socket)
             }
         }
     }
-    
+    end = time_now;
+    server_logs[13] = std::chrono::duration_cast<std::chrono::nanoseconds>(end-start).count();
+
 
     // 6.3 compute delta (ULTRA-OPTIMIZED v3: AVX2 2×unroll + aggressive prefetching)
     // Mixed access: delta[i] = XOR(row[i*SIZE_PI + j]) XOR XOR(col[j*SIZE_PI + sub_pi[i]])
+    start = time_now;
     #pragma omp parallel for schedule(static)
     for (TYPE_INDEX k = 0; k < DATA_CHUNKS; k++)
     {
@@ -1121,10 +1174,12 @@ int ServerDuetORAM::evict(zmq::socket_t& socket)
             }
         }
     }
-
+    end = time_now;
+    server_logs[14] = std::chrono::duration_cast<std::chrono::nanoseconds>(end-start).count();
     
     
     // 7. secret shared shuffle
+    start = time_now;
     TYPE_DATA** resultShare = new TYPE_DATA*[DATA_CHUNKS];
     for (int i = 0; i < DATA_CHUNKS; i++)
     {
@@ -1133,10 +1188,12 @@ int ServerDuetORAM::evict(zmq::socket_t& socket)
     }
     
     sss.secretShare(this->serverNo, numThreads, this->sub_pi, evict_vector_for_shuffle, this->delta, this->a, this->b, resultShare);
-
+    end = time_now;
+    server_logs[15] = std::chrono::duration_cast<std::chrono::nanoseconds>(end-start).count();
     
     
     // 8. 服务器之间交换mask后的数据，得到相同的copy
+    start = time_now;
     block* list_iv = new block[SIZE_PI];
     prg.reseed(&this->seed_iv);
     prg.random_block(list_iv, SIZE_PI);
@@ -1199,6 +1256,8 @@ int ServerDuetORAM::evict(zmq::socket_t& socket)
             xored_row[j] = result_row[j] ^ key_stream_for_exchange[j][i];
         }
     }
+    end = time_now;
+    server_logs[16] = std::chrono::duration_cast<std::chrono::nanoseconds>(end-start).count();
 
     // 9. distribute xored dot_product_vector to another server
     start = time_now;
@@ -1229,9 +1288,10 @@ int ServerDuetORAM::evict(zmq::socket_t& socket)
     pthread_join(thread_recv, NULL);
 
     cout<< "	[server] DONE!" <<endl;
-	server_logs[3] = thread_max;
+	server_logs[17] = thread_max;
 	thread_max = 0;
     end = time_now;
+    server_logs[18] = std::chrono::duration_cast<std::chrono::nanoseconds>(end-start).count();
     cout<< "	[EVICT] Xored Dot Product Vector SENT and RECV in " << std::chrono::duration_cast<std::chrono::nanoseconds>(end-start).count() << " ns"<<endl;
 
     cout << "   [server] Sparsing received xored dot product vector" << endl;
@@ -1268,6 +1328,7 @@ int ServerDuetORAM::evict(zmq::socket_t& socket)
     }
 
     end = time_now;
+    server_logs[19] = std::chrono::duration_cast<std::chrono::nanoseconds>(end-start).count();
     cout<< "	[EVICT] GET IDENTICAL PATH CALCULATED in " << std::chrono::duration_cast<std::chrono::nanoseconds>(end-start).count() <<endl;
 
     // 10. write back to files
@@ -1356,6 +1417,7 @@ int ServerDuetORAM::evict(zmq::socket_t& socket)
     fclose(file_out_iv);
     
     end = time_now;
+    server_logs[20] = std::chrono::duration_cast<std::chrono::nanoseconds>(end-start).count();
     cout<< "	[SendBlock] Eviction time in " << std::chrono::duration_cast<std::chrono::nanoseconds>(end-start).count() <<endl;
 
     socket.send((unsigned char*)CMD_SUCCESS,sizeof(CMD_SUCCESS));
