@@ -94,7 +94,7 @@ public:
     
 
     //logging
-    static unsigned long int exp_logs[9]; 	
+    static unsigned long int exp_logs[15]; 	
     static unsigned long int thread_max;
 	static char timestamp[16];
     

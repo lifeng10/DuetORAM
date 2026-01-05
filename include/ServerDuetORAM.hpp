@@ -103,7 +103,7 @@ public:
     void efficient_rotate();
 
 
-    static unsigned long int server_logs[13]; 
+    static unsigned long int server_logs[20]; 
     static unsigned long int thread_max;
     static char timestamp[16];
 };

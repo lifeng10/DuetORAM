@@ -14,7 +14,7 @@
 #include "struct_thread_computation.h"
 #include "struct_thread_loadData.h"
 
-unsigned long int ServerDuetORAM::server_logs[13];
+unsigned long int ServerDuetORAM::server_logs[20];
 unsigned long int ServerDuetORAM::thread_max = 0;
 char ServerDuetORAM::timestamp[16];
 
@@ -66,7 +66,7 @@ ServerDuetORAM::ServerDuetORAM(TYPE_INDEX serverNo, int selectedThreads) {
     this->SIZE_PI = (H+2)*BUCKET_SIZE;
     this->block_buffer_out = new unsigned char[sizeof(TYPE_DATA)*DATA_CHUNKS];
     this->block_buffer_in = new unsigned char[sizeof(TYPE_DATA)*DATA_CHUNKS+sizeof(TYPE_INDEX)+sizeof(block)];
-    this->evict_buffer_in = new unsigned char[sizeof(TYPE_INDEX) + sizeof(block) + 3 * sizeof(TYPE_INDEX) * SIZE_PI];
+    this->evict_buffer_in = new unsigned char[sizeof(TYPE_INDEX) + sizeof(block) + sizeof(TYPE_INDEX)*SIZE_PI + 3 * sizeof(TYPE_DATA)*DATA_CHUNKS*SIZE_PI];
     this->path_vector_in_for_identical_copy = new unsigned char[DATA_CHUNKS * SIZE_PI * sizeof(TYPE_DATA)];
     this->path_vector_out_for_identical_copy = new unsigned char[DATA_CHUNKS * SIZE_PI * sizeof(TYPE_DATA)];
 
@@ -112,7 +112,11 @@ ServerDuetORAM::ServerDuetORAM(TYPE_INDEX serverNo, int selectedThreads) {
         memset(this->delta[i],0,sizeof(TYPE_DATA)*SIZE_PI);
     }
     
+    time_t rawtime = time(0);
+	tm *now = localtime(&rawtime);
 
+	if(rawtime != -1)
+		strftime(timestamp,16,"%d%m_%H%M",now);
     
 }
 
@@ -129,6 +133,10 @@ int ServerDuetORAM::start() {
     cout<< "[Server] Socket is OPEN on " << this->CLIENT_ADDR << endl;
     socket.bind(this->CLIENT_ADDR.c_str());
 
+    auto start_recvORAMTree = time_now;
+    auto end_recvORAMTree = time_now;
+    auto start_retrieve = time_now;
+    auto end_retrieve = time_now;
     auto start_evict = time_now;
     auto end_evict = time_now;
 
@@ -160,7 +168,10 @@ int ServerDuetORAM::start() {
 				cout << "=================================================================" << endl;
 				cout<< "[Server] Receiving ORAM Key..." <<endl;
 				cout << "=================================================================" << endl;
+                start_recvORAMTree = time_now;
 				this->recvORAMKey(socket);
+                end_recvORAMTree = time_now;
+                server_logs[19] = std::chrono::duration_cast<std::chrono::nanoseconds>(end_recvORAMTree-start_recvORAMTree).count();
 				cout << "=================================================================" << endl;
 				cout<< "[Server] ORAM Key RECEIVED!" <<endl;
 				cout << "=================================================================" << endl;
@@ -171,7 +182,10 @@ int ServerDuetORAM::start() {
 				cout << "=================================================================" << endl;
 				cout<< "[Server] Receiving Logical Vector..." <<endl;
 				cout << "=================================================================" << endl;
+                start_retrieve = time_now;
 				this->retrieve(socket);
+                end_retrieve = time_now;
+                server_logs[18] = std::chrono::duration_cast<std::chrono::nanoseconds>(end_retrieve-start_retrieve).count();
 				cout << "=================================================================" << endl;
 				cout<< "[Server] Block Share SENT" <<endl;
 				cout << "=================================================================" << endl;
@@ -211,6 +225,7 @@ int ServerDuetORAM::start() {
                 start_evict = time_now;
 				this->evict(socket);
                 end_evict = time_now;
+                server_logs[17] = std::chrono::duration_cast<std::chrono::nanoseconds>(end_evict-start_evict).count();
                 cout<< "	[Server] Eviction Matrix Processed in " << std::chrono::duration_cast<std::chrono::nanoseconds>(end_evict-start_evict).count()<< " ns"<<endl;
 				cout << "=================================================================" << endl;
 				cout<< "[Server] EVICTION and DEGREE REDUCTION DONE!" <<endl;
@@ -221,6 +236,9 @@ int ServerDuetORAM::start() {
             default:
                 break;
         }
+
+        Utils::write_list_to_file(to_string(HEIGHT) + "_" + to_string(BLOCK_SIZE) + "_server" + to_string(serverNo)+ "_" + timestamp + ".txt",logDir, server_logs, 20);
+	    memset(server_logs, 0, sizeof(unsigned long int)*20);
     }
 
     return 0;
@@ -285,8 +303,8 @@ int ServerDuetORAM::recvORAMKey(zmq::socket_t& socket){
 
 int ServerDuetORAM::retrieve(zmq::socket_t& socket)
 {
-    Utils::write_list_to_file(to_string(HEIGHT) + "_" + to_string(BLOCK_SIZE) + "_server" + to_string(serverNo)+ "_" + timestamp + ".txt",logDir, server_logs, 13);
-	memset(server_logs, 0, sizeof(unsigned long int)*13);
+    // Utils::write_list_to_file(to_string(HEIGHT) + "_" + to_string(BLOCK_SIZE) + "_server" + to_string(serverNo)+ "_" + timestamp + ".txt",logDir, server_logs, 13);
+	// memset(server_logs, 0, sizeof(unsigned long int)*13);
 
     int ret = 1;
 	
@@ -643,16 +661,94 @@ int ServerDuetORAM::evict(zmq::socket_t& socket)
     cout<< "	[evict] Receiving Evict Information..." <<endl;;
 	auto start = time_now;
     // COMMUNICATION: 接收驱逐的信息
-    socket.recv(evict_buffer_in, sizeof(TYPE_INDEX) + sizeof(block) + 3 * sizeof(TYPE_INDEX) * SIZE_PI,0);
+    socket.recv(evict_buffer_in, sizeof(TYPE_INDEX) + sizeof(block) + sizeof(TYPE_INDEX)*SIZE_PI + 3 * sizeof(TYPE_DATA)*DATA_CHUNKS*SIZE_PI,0);
     auto end = time_now;
     cout<< "	[evict] RECEIVED! in " << std::chrono::duration_cast<std::chrono::nanoseconds>(end-start).count() <<endl;
 	server_logs[6] = std::chrono::duration_cast<std::chrono::nanoseconds>(end-start).count();
 
-    memcpy(&evict_pathID, &evict_buffer_in[0], sizeof(TYPE_INDEX));
-    memcpy(&this->seed_iv, &evict_buffer_in[sizeof(TYPE_INDEX)], sizeof(block));
-    memcpy(this->sub_pi, &evict_buffer_in[sizeof(TYPE_INDEX)+sizeof(block)], sizeof(TYPE_INDEX)*SIZE_PI);
-    memcpy(this->circularShift_1, &evict_buffer_in[sizeof(TYPE_INDEX)+sizeof(block)+sizeof(TYPE_INDEX)*SIZE_PI], sizeof(TYPE_INDEX)*SIZE_PI);
-    memcpy(this->circularShift_2, &evict_buffer_in[sizeof(TYPE_INDEX)+sizeof(block)+2*sizeof(TYPE_INDEX)*SIZE_PI], sizeof(TYPE_INDEX)*SIZE_PI);
+    
+    // Optimized zeroing with 4-way loop unrolling (75% less branch overhead at -O0)
+    int i = 0;
+    int limit = DATA_CHUNKS - 3;
+    const size_t chunk_size = sizeof(TYPE_DATA) * SIZE_PI;
+    
+    // Main loop: process 4 chunks per iteration
+    for (; i < limit; i += 4) {
+        memset(this->a[i],   0, chunk_size);
+        memset(this->b[i],   0, chunk_size);
+        memset(this->delta[i], 0, chunk_size);
+        
+        memset(this->a[i+1],   0, chunk_size);
+        memset(this->b[i+1],   0, chunk_size);
+        memset(this->delta[i+1], 0, chunk_size);
+        
+        memset(this->a[i+2],   0, chunk_size);
+        memset(this->b[i+2],   0, chunk_size);
+        memset(this->delta[i+2], 0, chunk_size);
+        
+        memset(this->a[i+3],   0, chunk_size);
+        memset(this->b[i+3],   0, chunk_size);
+        memset(this->delta[i+3], 0, chunk_size);
+    }
+    
+    // Cleanup: handle remaining 0-3 chunks
+    for (; i < DATA_CHUNKS; i++) {
+        memset(this->a[i], 0, chunk_size);
+        memset(this->b[i], 0, chunk_size);
+        memset(this->delta[i], 0, chunk_size);
+    }
+
+    // Parse evict_buffer_in - scalar copies (small, one-time overhead)
+    size_t offset = 0;
+    
+    memcpy(&evict_pathID, &evict_buffer_in[offset], sizeof(TYPE_INDEX));
+    offset += sizeof(TYPE_INDEX);
+    
+    memcpy(&this->seed_iv, &evict_buffer_in[offset], sizeof(block));
+    offset += sizeof(block);
+    
+    memcpy(this->sub_pi, &evict_buffer_in[offset], sizeof(TYPE_INDEX)*SIZE_PI);
+    offset += sizeof(TYPE_INDEX)*SIZE_PI;
+    
+    // Optimized delta copy with 4-way unrolling
+    i = 0;
+    limit = DATA_CHUNKS - 3;
+    for (; i < limit; i += 4) {
+        memcpy(this->delta[i],   &evict_buffer_in[offset], chunk_size); offset += chunk_size;
+        memcpy(this->delta[i+1], &evict_buffer_in[offset], chunk_size); offset += chunk_size;
+        memcpy(this->delta[i+2], &evict_buffer_in[offset], chunk_size); offset += chunk_size;
+        memcpy(this->delta[i+3], &evict_buffer_in[offset], chunk_size); offset += chunk_size;
+    }
+    for (; i < DATA_CHUNKS; i++) {
+        memcpy(this->delta[i], &evict_buffer_in[offset], chunk_size);
+        offset += chunk_size;
+    }
+    
+    // Optimized a copy with 4-way unrolling
+    i = 0;
+    for (; i < limit; i += 4) {
+        memcpy(this->a[i],   &evict_buffer_in[offset], chunk_size); offset += chunk_size;
+        memcpy(this->a[i+1], &evict_buffer_in[offset], chunk_size); offset += chunk_size;
+        memcpy(this->a[i+2], &evict_buffer_in[offset], chunk_size); offset += chunk_size;
+        memcpy(this->a[i+3], &evict_buffer_in[offset], chunk_size); offset += chunk_size;
+    }
+    for (; i < DATA_CHUNKS; i++) {
+        memcpy(this->a[i], &evict_buffer_in[offset], chunk_size);
+        offset += chunk_size;
+    }
+    
+    // Optimized b copy with 4-way unrolling
+    i = 0;
+    for (; i < limit; i += 4) {
+        memcpy(this->b[i],   &evict_buffer_in[offset], chunk_size); offset += chunk_size;
+        memcpy(this->b[i+1], &evict_buffer_in[offset], chunk_size); offset += chunk_size;
+        memcpy(this->b[i+2], &evict_buffer_in[offset], chunk_size); offset += chunk_size;
+        memcpy(this->b[i+3], &evict_buffer_in[offset], chunk_size); offset += chunk_size;
+    }
+    for (; i < DATA_CHUNKS; i++) {
+        memcpy(this->b[i], &evict_buffer_in[offset], chunk_size);
+        offset += chunk_size;
+    }
 
     TYPE_INDEX fullPathIdx[H+2];
     ORAM.getFullPathIdx(fullPathIdx, evict_pathID);
@@ -773,7 +869,7 @@ int ServerDuetORAM::evict(zmq::socket_t& socket)
     
     
     // 5. Circular Shift
-    efficient_rotate();
+    // efficient_rotate();
     
     // 6. Expansion (optimized with OpenMP parallelization)
     // Note: Each thread needs its own PRG instance to avoid race conditions
@@ -801,326 +897,326 @@ int ServerDuetORAM::evict(zmq::socket_t& socket)
     //     }
     // }
 
-    //FIXME: Clear a, b, delta before computation to avoid using old values from previous eviction
-    for (int i = 0; i < DATA_CHUNKS; i++)
-    {
-        memset(this->a[i], 0, sizeof(TYPE_DATA)*SIZE_PI);
-        memset(this->b[i], 0, sizeof(TYPE_DATA)*SIZE_PI);
-        memset(this->delta[i], 0, sizeof(TYPE_DATA)*SIZE_PI);
-    }
+    // //FIXME: Clear a, b, delta before computation to avoid using old values from previous eviction
+    // for (int i = 0; i < DATA_CHUNKS; i++)
+    // {
+    //     memset(this->a[i], 0, sizeof(TYPE_DATA)*SIZE_PI);
+    //     memset(this->b[i], 0, sizeof(TYPE_DATA)*SIZE_PI);
+    //     memset(this->delta[i], 0, sizeof(TYPE_DATA)*SIZE_PI);
+    // }
 
-    // 6.1 compute a (ULTRA-OPTIMIZED v3: AVX2 4-way + prefetching)
-    // Strided access pattern: a[j] = XOR(expansion[j + i*SIZE_PI] for all i)
-    #pragma omp parallel for schedule(static)
-    for (TYPE_INDEX k = 0; k < DATA_CHUNKS; k++)
-    {
-        TYPE_DATA* __restrict__ expansion_row = this->fullPermutationExpansion[k];
-        TYPE_DATA* __restrict__ a_row = this->a[k];
+//     // 6.1 compute a (ULTRA-OPTIMIZED v3: AVX2 4-way + prefetching)
+//     // Strided access pattern: a[j] = XOR(expansion[j + i*SIZE_PI] for all i)
+//     #pragma omp parallel for schedule(static)
+//     for (TYPE_INDEX k = 0; k < DATA_CHUNKS; k++)
+//     {
+//         TYPE_DATA* __restrict__ expansion_row = this->fullPermutationExpansion[k];
+//         TYPE_DATA* __restrict__ a_row = this->a[k];
         
-        for (TYPE_INDEX j = 0; j < SIZE_PI; j++)
-        {
-            if (CPUFeatures::has_avx2()) {
-                __m256i acc1 = _mm256_setzero_si256();
-                __m256i acc2 = _mm256_setzero_si256();
-                __m256i acc3 = _mm256_setzero_si256();
-                __m256i acc4 = _mm256_setzero_si256();
+//         for (TYPE_INDEX j = 0; j < SIZE_PI; j++)
+//         {
+//             if (CPUFeatures::has_avx2()) {
+//                 __m256i acc1 = _mm256_setzero_si256();
+//                 __m256i acc2 = _mm256_setzero_si256();
+//                 __m256i acc3 = _mm256_setzero_si256();
+//                 __m256i acc4 = _mm256_setzero_si256();
                 
-                TYPE_INDEX i = 0;
-                // 4-way parallel accumulation (16×64-bit per iteration)
-                // Each accumulator breaks data dependencies for maximum ILP under -O0
-                for (; i + 15 < SIZE_PI; i += 16) {
-#ifdef ENABLE_PREFETCH
-                    // Optional prefetching (disabled by default - hardware prefetcher is often better)
-                    // Prefetch 32 iterations ahead for strided access
-                    if (i + 47 < SIZE_PI) {
-                        _mm_prefetch((const char*)&expansion_row[j + (i+32)*SIZE_PI], _MM_HINT_T0);
-                        _mm_prefetch((const char*)&expansion_row[j + (i+40)*SIZE_PI], _MM_HINT_T0);
-                    }
-#endif
+//                 TYPE_INDEX i = 0;
+//                 // 4-way parallel accumulation (16×64-bit per iteration)
+//                 // Each accumulator breaks data dependencies for maximum ILP under -O0
+//                 for (; i + 15 < SIZE_PI; i += 16) {
+// #ifdef ENABLE_PREFETCH
+//                     // Optional prefetching (disabled by default - hardware prefetcher is often better)
+//                     // Prefetch 32 iterations ahead for strided access
+//                     if (i + 47 < SIZE_PI) {
+//                         _mm_prefetch((const char*)&expansion_row[j + (i+32)*SIZE_PI], _MM_HINT_T0);
+//                         _mm_prefetch((const char*)&expansion_row[j + (i+40)*SIZE_PI], _MM_HINT_T0);
+//                     }
+// #endif
                     
-                    // Manual gather for strided access (no AVX2 gather for XOR)
-                    __m256i v1 = _mm256_set_epi64x(
-                        expansion_row[j + (i+3)*SIZE_PI],
-                        expansion_row[j + (i+2)*SIZE_PI],
-                        expansion_row[j + (i+1)*SIZE_PI],
-                        expansion_row[j + i*SIZE_PI]
-                    );
-                    __m256i v2 = _mm256_set_epi64x(
-                        expansion_row[j + (i+7)*SIZE_PI],
-                        expansion_row[j + (i+6)*SIZE_PI],
-                        expansion_row[j + (i+5)*SIZE_PI],
-                        expansion_row[j + (i+4)*SIZE_PI]
-                    );
-                    __m256i v3 = _mm256_set_epi64x(
-                        expansion_row[j + (i+11)*SIZE_PI],
-                        expansion_row[j + (i+10)*SIZE_PI],
-                        expansion_row[j + (i+9)*SIZE_PI],
-                        expansion_row[j + (i+8)*SIZE_PI]
-                    );
-                    __m256i v4 = _mm256_set_epi64x(
-                        expansion_row[j + (i+15)*SIZE_PI],
-                        expansion_row[j + (i+14)*SIZE_PI],
-                        expansion_row[j + (i+13)*SIZE_PI],
-                        expansion_row[j + (i+12)*SIZE_PI]
-                    );
+//                     // Manual gather for strided access (no AVX2 gather for XOR)
+//                     __m256i v1 = _mm256_set_epi64x(
+//                         expansion_row[j + (i+3)*SIZE_PI],
+//                         expansion_row[j + (i+2)*SIZE_PI],
+//                         expansion_row[j + (i+1)*SIZE_PI],
+//                         expansion_row[j + i*SIZE_PI]
+//                     );
+//                     __m256i v2 = _mm256_set_epi64x(
+//                         expansion_row[j + (i+7)*SIZE_PI],
+//                         expansion_row[j + (i+6)*SIZE_PI],
+//                         expansion_row[j + (i+5)*SIZE_PI],
+//                         expansion_row[j + (i+4)*SIZE_PI]
+//                     );
+//                     __m256i v3 = _mm256_set_epi64x(
+//                         expansion_row[j + (i+11)*SIZE_PI],
+//                         expansion_row[j + (i+10)*SIZE_PI],
+//                         expansion_row[j + (i+9)*SIZE_PI],
+//                         expansion_row[j + (i+8)*SIZE_PI]
+//                     );
+//                     __m256i v4 = _mm256_set_epi64x(
+//                         expansion_row[j + (i+15)*SIZE_PI],
+//                         expansion_row[j + (i+14)*SIZE_PI],
+//                         expansion_row[j + (i+13)*SIZE_PI],
+//                         expansion_row[j + (i+12)*SIZE_PI]
+//                     );
                     
-                    // XOR into separate accumulators (breaks dependency chains for -O0)
-                    acc1 = _mm256_xor_si256(acc1, v1);
-                    acc2 = _mm256_xor_si256(acc2, v2);
-                    acc3 = _mm256_xor_si256(acc3, v3);
-                    acc4 = _mm256_xor_si256(acc4, v4);
-                }
+//                     // XOR into separate accumulators (breaks dependency chains for -O0)
+//                     acc1 = _mm256_xor_si256(acc1, v1);
+//                     acc2 = _mm256_xor_si256(acc2, v2);
+//                     acc3 = _mm256_xor_si256(acc3, v3);
+//                     acc4 = _mm256_xor_si256(acc4, v4);
+//                 }
                 
-                // Merge accumulators in tree reduction (minimizes latency)
-                acc1 = _mm256_xor_si256(acc1, acc2);
-                acc3 = _mm256_xor_si256(acc3, acc4);
-                acc1 = _mm256_xor_si256(acc1, acc3);
+//                 // Merge accumulators in tree reduction (minimizes latency)
+//                 acc1 = _mm256_xor_si256(acc1, acc2);
+//                 acc3 = _mm256_xor_si256(acc3, acc4);
+//                 acc1 = _mm256_xor_si256(acc1, acc3);
                 
-                // Horizontal reduction: 256-bit → 128-bit → 64-bit
-                __m128i low = _mm256_castsi256_si128(acc1);
-                __m128i high = _mm256_extracti128_si256(acc1, 1);
-                low = _mm_xor_si128(low, high);
+//                 // Horizontal reduction: 256-bit → 128-bit → 64-bit
+//                 __m128i low = _mm256_castsi256_si128(acc1);
+//                 __m128i high = _mm256_extracti128_si256(acc1, 1);
+//                 low = _mm_xor_si128(low, high);
                 
-                uint64_t tmp[2];
-                _mm_storeu_si128((__m128i*)tmp, low);
-                TYPE_DATA result = tmp[0] ^ tmp[1];
+//                 uint64_t tmp[2];
+//                 _mm_storeu_si128((__m128i*)tmp, low);
+//                 TYPE_DATA result = tmp[0] ^ tmp[1];
                 
-                // Handle tail elements (SIZE_PI % 16)
-                for (; i < SIZE_PI; i++) {
-                    result ^= expansion_row[j + i * SIZE_PI];
-                }
+//                 // Handle tail elements (SIZE_PI % 16)
+//                 for (; i < SIZE_PI; i++) {
+//                     result ^= expansion_row[j + i * SIZE_PI];
+//                 }
                 
-                a_row[j] = result;
-            } else {
-                // Software fallback: 8-way unrolled scalar path
-                TYPE_DATA result = 0;
-                TYPE_INDEX i = 0;
-                for (; i + 7 < SIZE_PI; i += 8) {
-                    result ^= expansion_row[j + (i+0)*SIZE_PI];
-                    result ^= expansion_row[j + (i+1)*SIZE_PI];
-                    result ^= expansion_row[j + (i+2)*SIZE_PI];
-                    result ^= expansion_row[j + (i+3)*SIZE_PI];
-                    result ^= expansion_row[j + (i+4)*SIZE_PI];
-                    result ^= expansion_row[j + (i+5)*SIZE_PI];
-                    result ^= expansion_row[j + (i+6)*SIZE_PI];
-                    result ^= expansion_row[j + (i+7)*SIZE_PI];
-                }
-                for (; i < SIZE_PI; i++) {
-                    result ^= expansion_row[j + i*SIZE_PI];
-                }
-                a_row[j] = result;
-            }
-        }
-    }
+//                 a_row[j] = result;
+//             } else {
+//                 // Software fallback: 8-way unrolled scalar path
+//                 TYPE_DATA result = 0;
+//                 TYPE_INDEX i = 0;
+//                 for (; i + 7 < SIZE_PI; i += 8) {
+//                     result ^= expansion_row[j + (i+0)*SIZE_PI];
+//                     result ^= expansion_row[j + (i+1)*SIZE_PI];
+//                     result ^= expansion_row[j + (i+2)*SIZE_PI];
+//                     result ^= expansion_row[j + (i+3)*SIZE_PI];
+//                     result ^= expansion_row[j + (i+4)*SIZE_PI];
+//                     result ^= expansion_row[j + (i+5)*SIZE_PI];
+//                     result ^= expansion_row[j + (i+6)*SIZE_PI];
+//                     result ^= expansion_row[j + (i+7)*SIZE_PI];
+//                 }
+//                 for (; i < SIZE_PI; i++) {
+//                     result ^= expansion_row[j + i*SIZE_PI];
+//                 }
+//                 a_row[j] = result;
+//             }
+//         }
+//     }
     
 
-    // 6.2 compute b (ULTRA-OPTIMIZED v3: AVX2 2×unroll + dual accumulators)
-    // Sequential access pattern: b[i] = XOR(expansion[i*SIZE_PI + j] for all j)
-    #pragma omp parallel for schedule(static)
-    for (TYPE_INDEX k = 0; k < DATA_CHUNKS; k++)
-    {
-        TYPE_DATA* __restrict__ expansion_row = this->fullPermutationExpansion[k];
-        TYPE_DATA* __restrict__ b_row = this->b[k];
+//     // 6.2 compute b (ULTRA-OPTIMIZED v3: AVX2 2×unroll + dual accumulators)
+//     // Sequential access pattern: b[i] = XOR(expansion[i*SIZE_PI + j] for all j)
+//     #pragma omp parallel for schedule(static)
+//     for (TYPE_INDEX k = 0; k < DATA_CHUNKS; k++)
+//     {
+//         TYPE_DATA* __restrict__ expansion_row = this->fullPermutationExpansion[k];
+//         TYPE_DATA* __restrict__ b_row = this->b[k];
         
-        for (TYPE_INDEX i = 0; i < SIZE_PI; i++)
-        {
-            TYPE_INDEX base_idx = i * SIZE_PI;
+//         for (TYPE_INDEX i = 0; i < SIZE_PI; i++)
+//         {
+//             TYPE_INDEX base_idx = i * SIZE_PI;
             
-            if (CPUFeatures::has_avx2()) {
-                // Dual accumulators for instruction-level parallelism (critical for -O0)
-                __m256i acc1 = _mm256_setzero_si256();
-                __m256i acc2 = _mm256_setzero_si256();
-                TYPE_INDEX j = 0;
+//             if (CPUFeatures::has_avx2()) {
+//                 // Dual accumulators for instruction-level parallelism (critical for -O0)
+//                 __m256i acc1 = _mm256_setzero_si256();
+//                 __m256i acc2 = _mm256_setzero_si256();
+//                 TYPE_INDEX j = 0;
                 
-                // Process 8 elements per iteration (2× AVX2 registers)
-                // Sequential memory access → optimal cache utilization
-                for (; j + 7 < SIZE_PI; j += 8) {
-#ifdef ENABLE_PREFETCH
-                    // Optional prefetching (may help if SIZE_PI >> L1 cache)
-                    // Prefetch 128 bytes (4 cache lines) ahead
-                    if (j + 64 < SIZE_PI) {
-                        _mm_prefetch((const char*)&expansion_row[base_idx + j + 64], _MM_HINT_T0);
-                    }
-#endif
+//                 // Process 8 elements per iteration (2× AVX2 registers)
+//                 // Sequential memory access → optimal cache utilization
+//                 for (; j + 7 < SIZE_PI; j += 8) {
+// #ifdef ENABLE_PREFETCH
+//                     // Optional prefetching (may help if SIZE_PI >> L1 cache)
+//                     // Prefetch 128 bytes (4 cache lines) ahead
+//                     if (j + 64 < SIZE_PI) {
+//                         _mm_prefetch((const char*)&expansion_row[base_idx + j + 64], _MM_HINT_T0);
+//                     }
+// #endif
                     
-                    // Load 2× 256-bit vectors (8× TYPE_DATA, assuming TYPE_DATA = 64-bit)
-                    __m256i data1 = _mm256_loadu_si256((__m256i*)&expansion_row[base_idx + j]);
-                    __m256i data2 = _mm256_loadu_si256((__m256i*)&expansion_row[base_idx + j + 4]);
+//                     // Load 2× 256-bit vectors (8× TYPE_DATA, assuming TYPE_DATA = 64-bit)
+//                     __m256i data1 = _mm256_loadu_si256((__m256i*)&expansion_row[base_idx + j]);
+//                     __m256i data2 = _mm256_loadu_si256((__m256i*)&expansion_row[base_idx + j + 4]);
                     
-                    // XOR into separate accumulators (breaks dependency chain)
-                    acc1 = _mm256_xor_si256(acc1, data1);
-                    acc2 = _mm256_xor_si256(acc2, data2);
-                }
+//                     // XOR into separate accumulators (breaks dependency chain)
+//                     acc1 = _mm256_xor_si256(acc1, data1);
+//                     acc2 = _mm256_xor_si256(acc2, data2);
+//                 }
                 
-                // Merge accumulators
-                acc1 = _mm256_xor_si256(acc1, acc2);
+//                 // Merge accumulators
+//                 acc1 = _mm256_xor_si256(acc1, acc2);
                 
-                // Horizontal reduction: 256-bit → 128-bit → 64-bit
-                __m128i low = _mm256_castsi256_si128(acc1);
-                __m128i high = _mm256_extracti128_si256(acc1, 1);
-                low = _mm_xor_si128(low, high);
+//                 // Horizontal reduction: 256-bit → 128-bit → 64-bit
+//                 __m128i low = _mm256_castsi256_si128(acc1);
+//                 __m128i high = _mm256_extracti128_si256(acc1, 1);
+//                 low = _mm_xor_si128(low, high);
                 
-                uint64_t tmp[2];
-                _mm_storeu_si128((__m128i*)tmp, low);
-                TYPE_DATA result = tmp[0] ^ tmp[1];
+//                 uint64_t tmp[2];
+//                 _mm_storeu_si128((__m128i*)tmp, low);
+//                 TYPE_DATA result = tmp[0] ^ tmp[1];
                 
-                // Handle tail elements (SIZE_PI % 8)
-                for (; j < SIZE_PI; j++) {
-                    result ^= expansion_row[base_idx + j];
-                }
+//                 // Handle tail elements (SIZE_PI % 8)
+//                 for (; j < SIZE_PI; j++) {
+//                     result ^= expansion_row[base_idx + j];
+//                 }
                 
-                b_row[i] = result;
-            } else {
-                // Software fallback: 8-way unrolled scalar path
-                TYPE_DATA result = 0;
-                TYPE_INDEX j = 0;
-                for (; j + 7 < SIZE_PI; j += 8) {
-                    result ^= expansion_row[base_idx + j];
-                    result ^= expansion_row[base_idx + j + 1];
-                    result ^= expansion_row[base_idx + j + 2];
-                    result ^= expansion_row[base_idx + j + 3];
-                    result ^= expansion_row[base_idx + j + 4];
-                    result ^= expansion_row[base_idx + j + 5];
-                    result ^= expansion_row[base_idx + j + 6];
-                    result ^= expansion_row[base_idx + j + 7];
-                }
-                for (; j < SIZE_PI; j++) {
-                    result ^= expansion_row[base_idx + j];
-                }
-                b_row[i] = result;
-            }
-        }
-    }
+//                 b_row[i] = result;
+//             } else {
+//                 // Software fallback: 8-way unrolled scalar path
+//                 TYPE_DATA result = 0;
+//                 TYPE_INDEX j = 0;
+//                 for (; j + 7 < SIZE_PI; j += 8) {
+//                     result ^= expansion_row[base_idx + j];
+//                     result ^= expansion_row[base_idx + j + 1];
+//                     result ^= expansion_row[base_idx + j + 2];
+//                     result ^= expansion_row[base_idx + j + 3];
+//                     result ^= expansion_row[base_idx + j + 4];
+//                     result ^= expansion_row[base_idx + j + 5];
+//                     result ^= expansion_row[base_idx + j + 6];
+//                     result ^= expansion_row[base_idx + j + 7];
+//                 }
+//                 for (; j < SIZE_PI; j++) {
+//                     result ^= expansion_row[base_idx + j];
+//                 }
+//                 b_row[i] = result;
+//             }
+//         }
+//     }
     
 
-    // 6.3 compute delta (ULTRA-OPTIMIZED v3: AVX2 2×unroll + aggressive prefetching)
-    // Mixed access: delta[i] = XOR(row[i*SIZE_PI + j]) XOR XOR(col[j*SIZE_PI + sub_pi[i]])
-    #pragma omp parallel for schedule(static)
-    for (TYPE_INDEX k = 0; k < DATA_CHUNKS; k++)
-    {
-        TYPE_DATA* __restrict__ punctured_row = this->puncturedPermutationExpansion[k];
-        TYPE_DATA* __restrict__ delta_row = this->delta[k];
-        TYPE_INDEX* __restrict__ sub_pi_local = this->sub_pi;
+//     // 6.3 compute delta (ULTRA-OPTIMIZED v3: AVX2 2×unroll + aggressive prefetching)
+//     // Mixed access: delta[i] = XOR(row[i*SIZE_PI + j]) XOR XOR(col[j*SIZE_PI + sub_pi[i]])
+//     #pragma omp parallel for schedule(static)
+//     for (TYPE_INDEX k = 0; k < DATA_CHUNKS; k++)
+//     {
+//         TYPE_DATA* __restrict__ punctured_row = this->puncturedPermutationExpansion[k];
+//         TYPE_DATA* __restrict__ delta_row = this->delta[k];
+//         TYPE_INDEX* __restrict__ sub_pi_local = this->sub_pi;
         
-        for (TYPE_INDEX i = 0; i < SIZE_PI; i++)
-        {
-            TYPE_INDEX base_idx = i * SIZE_PI;
-            TYPE_INDEX sub_pi_i = sub_pi_local[i];
+//         for (TYPE_INDEX i = 0; i < SIZE_PI; i++)
+//         {
+//             TYPE_INDEX base_idx = i * SIZE_PI;
+//             TYPE_INDEX sub_pi_i = sub_pi_local[i];
             
-            if (CPUFeatures::has_avx2()) {
-                // Separate accumulators for row and column loops
-                __m256i acc_row1 = _mm256_setzero_si256();
-                __m256i acc_row2 = _mm256_setzero_si256();
-                __m256i acc_col1 = _mm256_setzero_si256();
-                __m256i acc_col2 = _mm256_setzero_si256();
+//             if (CPUFeatures::has_avx2()) {
+//                 // Separate accumulators for row and column loops
+//                 __m256i acc_row1 = _mm256_setzero_si256();
+//                 __m256i acc_row2 = _mm256_setzero_si256();
+//                 __m256i acc_col1 = _mm256_setzero_si256();
+//                 __m256i acc_col2 = _mm256_setzero_si256();
                 
-                TYPE_INDEX j = 0;
+//                 TYPE_INDEX j = 0;
                 
-                // ============================================================
-                // LOOP 1: Row-wise XOR (sequential access, cache-friendly)
-                // Process 8 elements per iteration with dual accumulators
-                // ============================================================
-                for (; j + 7 < SIZE_PI; j += 8) {
-#ifdef ENABLE_PREFETCH
-                    // Prefetch sequential data (optional - hardware prefetcher handles this well)
-                    if (j + 64 < SIZE_PI) {
-                        _mm_prefetch((const char*)&punctured_row[base_idx + j + 64], _MM_HINT_T0);
-                    }
-#endif
+//                 // ============================================================
+//                 // LOOP 1: Row-wise XOR (sequential access, cache-friendly)
+//                 // Process 8 elements per iteration with dual accumulators
+//                 // ============================================================
+//                 for (; j + 7 < SIZE_PI; j += 8) {
+// #ifdef ENABLE_PREFETCH
+//                     // Prefetch sequential data (optional - hardware prefetcher handles this well)
+//                     if (j + 64 < SIZE_PI) {
+//                         _mm_prefetch((const char*)&punctured_row[base_idx + j + 64], _MM_HINT_T0);
+//                     }
+// #endif
                     
-                    __m256i data1 = _mm256_loadu_si256((__m256i*)&punctured_row[base_idx + j]);
-                    __m256i data2 = _mm256_loadu_si256((__m256i*)&punctured_row[base_idx + j + 4]);
+//                     __m256i data1 = _mm256_loadu_si256((__m256i*)&punctured_row[base_idx + j]);
+//                     __m256i data2 = _mm256_loadu_si256((__m256i*)&punctured_row[base_idx + j + 4]);
                     
-                    acc_row1 = _mm256_xor_si256(acc_row1, data1);
-                    acc_row2 = _mm256_xor_si256(acc_row2, data2);
-                }
+//                     acc_row1 = _mm256_xor_si256(acc_row1, data1);
+//                     acc_row2 = _mm256_xor_si256(acc_row2, data2);
+//                 }
                 
-                // ============================================================
-                // LOOP 2: Column-wise XOR (strided access, prefetching critical!)
-                // Manual gather since AVX2 has no native gather-XOR
-                // ============================================================
-                TYPE_INDEX j2 = 0;
-                for (; j2 + 7 < SIZE_PI; j2 += 8) {
-#ifdef ENABLE_PREFETCH
-                    // Aggressive prefetching for strided access (this is where it helps most)
-                    // Prefetch 16-32 iterations ahead to hide memory latency
-                    if (j2 + 24 < SIZE_PI) {
-                        _mm_prefetch((const char*)&punctured_row[(j2+16) * SIZE_PI + sub_pi_i], _MM_HINT_T0);
-                        _mm_prefetch((const char*)&punctured_row[(j2+20) * SIZE_PI + sub_pi_i], _MM_HINT_T0);
-                        _mm_prefetch((const char*)&punctured_row[(j2+24) * SIZE_PI + sub_pi_i], _MM_HINT_T0);
-                    }
-#endif
+//                 // ============================================================
+//                 // LOOP 2: Column-wise XOR (strided access, prefetching critical!)
+//                 // Manual gather since AVX2 has no native gather-XOR
+//                 // ============================================================
+//                 TYPE_INDEX j2 = 0;
+//                 for (; j2 + 7 < SIZE_PI; j2 += 8) {
+// #ifdef ENABLE_PREFETCH
+//                     // Aggressive prefetching for strided access (this is where it helps most)
+//                     // Prefetch 16-32 iterations ahead to hide memory latency
+//                     if (j2 + 24 < SIZE_PI) {
+//                         _mm_prefetch((const char*)&punctured_row[(j2+16) * SIZE_PI + sub_pi_i], _MM_HINT_T0);
+//                         _mm_prefetch((const char*)&punctured_row[(j2+20) * SIZE_PI + sub_pi_i], _MM_HINT_T0);
+//                         _mm_prefetch((const char*)&punctured_row[(j2+24) * SIZE_PI + sub_pi_i], _MM_HINT_T0);
+//                     }
+// #endif
                     
-                    // Manual gather for first 4 elements
-                    __m256i col_data1 = _mm256_set_epi64x(
-                        punctured_row[(j2+3) * SIZE_PI + sub_pi_i],
-                        punctured_row[(j2+2) * SIZE_PI + sub_pi_i],
-                        punctured_row[(j2+1) * SIZE_PI + sub_pi_i],
-                        punctured_row[j2 * SIZE_PI + sub_pi_i]
-                    );
+//                     // Manual gather for first 4 elements
+//                     __m256i col_data1 = _mm256_set_epi64x(
+//                         punctured_row[(j2+3) * SIZE_PI + sub_pi_i],
+//                         punctured_row[(j2+2) * SIZE_PI + sub_pi_i],
+//                         punctured_row[(j2+1) * SIZE_PI + sub_pi_i],
+//                         punctured_row[j2 * SIZE_PI + sub_pi_i]
+//                     );
                     
-                    // Manual gather for next 4 elements
-                    __m256i col_data2 = _mm256_set_epi64x(
-                        punctured_row[(j2+7) * SIZE_PI + sub_pi_i],
-                        punctured_row[(j2+6) * SIZE_PI + sub_pi_i],
-                        punctured_row[(j2+5) * SIZE_PI + sub_pi_i],
-                        punctured_row[(j2+4) * SIZE_PI + sub_pi_i]
-                    );
+//                     // Manual gather for next 4 elements
+//                     __m256i col_data2 = _mm256_set_epi64x(
+//                         punctured_row[(j2+7) * SIZE_PI + sub_pi_i],
+//                         punctured_row[(j2+6) * SIZE_PI + sub_pi_i],
+//                         punctured_row[(j2+5) * SIZE_PI + sub_pi_i],
+//                         punctured_row[(j2+4) * SIZE_PI + sub_pi_i]
+//                     );
                     
-                    acc_col1 = _mm256_xor_si256(acc_col1, col_data1);
-                    acc_col2 = _mm256_xor_si256(acc_col2, col_data2);
-                }
+//                     acc_col1 = _mm256_xor_si256(acc_col1, col_data1);
+//                     acc_col2 = _mm256_xor_si256(acc_col2, col_data2);
+//                 }
                 
-                // Merge all accumulators (tree reduction)
-                acc_row1 = _mm256_xor_si256(acc_row1, acc_row2);
-                acc_col1 = _mm256_xor_si256(acc_col1, acc_col2);
-                __m256i acc_final = _mm256_xor_si256(acc_row1, acc_col1);
+//                 // Merge all accumulators (tree reduction)
+//                 acc_row1 = _mm256_xor_si256(acc_row1, acc_row2);
+//                 acc_col1 = _mm256_xor_si256(acc_col1, acc_col2);
+//                 __m256i acc_final = _mm256_xor_si256(acc_row1, acc_col1);
                 
-                // Horizontal reduction: 256-bit → 128-bit → 64-bit
-                __m128i low = _mm256_castsi256_si128(acc_final);
-                __m128i high = _mm256_extracti128_si256(acc_final, 1);
-                low = _mm_xor_si128(low, high);
+//                 // Horizontal reduction: 256-bit → 128-bit → 64-bit
+//                 __m128i low = _mm256_castsi256_si128(acc_final);
+//                 __m128i high = _mm256_extracti128_si256(acc_final, 1);
+//                 low = _mm_xor_si128(low, high);
                 
-                uint64_t tmp[2];
-                _mm_storeu_si128((__m128i*)tmp, low);
-                TYPE_DATA result = tmp[0] ^ tmp[1];
+//                 uint64_t tmp[2];
+//                 _mm_storeu_si128((__m128i*)tmp, low);
+//                 TYPE_DATA result = tmp[0] ^ tmp[1];
                 
-                // Handle tail elements for row loop (SIZE_PI % 8)
-                for (; j < SIZE_PI; j++) {
-                    result ^= punctured_row[base_idx + j];
-                }
+//                 // Handle tail elements for row loop (SIZE_PI % 8)
+//                 for (; j < SIZE_PI; j++) {
+//                     result ^= punctured_row[base_idx + j];
+//                 }
                 
-                // Handle tail elements for column loop (SIZE_PI % 8)
-                for (; j2 < SIZE_PI; j2++) {
-                    result ^= punctured_row[j2 * SIZE_PI + sub_pi_i];
-                }
+//                 // Handle tail elements for column loop (SIZE_PI % 8)
+//                 for (; j2 < SIZE_PI; j2++) {
+//                     result ^= punctured_row[j2 * SIZE_PI + sub_pi_i];
+//                 }
                 
-                delta_row[i] = result;
-            } else {
-                // Software fallback: scalar with 4-way unrolling
-                TYPE_DATA result = 0;
+//                 delta_row[i] = result;
+//             } else {
+//                 // Software fallback: scalar with 4-way unrolling
+//                 TYPE_DATA result = 0;
                 
-                // Row loop
-                TYPE_INDEX j = 0;
-                for (; j + 3 < SIZE_PI; j += 4) {
-                    result ^= punctured_row[base_idx + j];
-                    result ^= punctured_row[base_idx + j + 1];
-                    result ^= punctured_row[base_idx + j + 2];
-                    result ^= punctured_row[base_idx + j + 3];
-                }
-                for (; j < SIZE_PI; j++) {
-                    result ^= punctured_row[base_idx + j];
-                }
+//                 // Row loop
+//                 TYPE_INDEX j = 0;
+//                 for (; j + 3 < SIZE_PI; j += 4) {
+//                     result ^= punctured_row[base_idx + j];
+//                     result ^= punctured_row[base_idx + j + 1];
+//                     result ^= punctured_row[base_idx + j + 2];
+//                     result ^= punctured_row[base_idx + j + 3];
+//                 }
+//                 for (; j < SIZE_PI; j++) {
+//                     result ^= punctured_row[base_idx + j];
+//                 }
                 
-                // Column loop
-                for (j = 0; j < SIZE_PI; j++) {
-                    result ^= punctured_row[j * SIZE_PI + sub_pi_i];
-                }
+//                 // Column loop
+//                 for (j = 0; j < SIZE_PI; j++) {
+//                     result ^= punctured_row[j * SIZE_PI + sub_pi_i];
+//                 }
                 
-                delta_row[i] = result;
-            }
-        }
-    }
+//                 delta_row[i] = result;
+//             }
+//         }
+//     }
 
     
     

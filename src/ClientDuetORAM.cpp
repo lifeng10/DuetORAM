@@ -1,7 +1,7 @@
 #include "ClientDuetORAM.hpp"
 #include "DuetORAM.hpp"
 
-unsigned long int ClientDuetORAM::exp_logs[9];
+unsigned long int ClientDuetORAM::exp_logs[15];
 unsigned long int ClientDuetORAM::thread_max = 0; //用于记录执行线程的时间。因为有多个线程，只记录耗时最长的线程所用的时间
 char ClientDuetORAM::timestamp[16];
 
@@ -85,8 +85,40 @@ ClientDuetORAM::ClientDuetORAM() {
     this->evict_buffer_out = new unsigned char*[NUM_SERVERS];
     for (int i = 0; i < NUM_SERVERS; i++)
     {
-        this->evict_buffer_out[i] = new unsigned char[sizeof(TYPE_INDEX) + sizeof(block) + 3 * sizeof(TYPE_INDEX) * SIZE_PI];
+        this->evict_buffer_out[i] = new unsigned char[sizeof(TYPE_INDEX) + sizeof(block) + sizeof(TYPE_INDEX)*SIZE_PI + 3 * sizeof(TYPE_DATA)*DATA_CHUNKS*SIZE_PI];
     }
+
+    time_t now = time(0);
+	char* dt = ctime(&now);
+	FILE* file_out = NULL;
+	string path = clientLocalDir + "lastest_config";
+	string info = "Height of Tree: " + to_string(HEIGHT) + "\n";
+	info += "Number of Blocks: " + to_string(NUM_BLOCK) + "\n";
+	info += "Bucket Size: " + to_string(BUCKET_SIZE) + "\n";
+	info += "Eviction Rate: " + to_string(EVICT_RATE) + "\n";
+	info += "Block Size (B): " + to_string(BLOCK_SIZE) + "\n";
+	info += "ID Size (B): " + to_string(sizeof(TYPE_ID)) + "\n";
+	info += "Number of Chunks: " + to_string(DATA_CHUNKS) + "\n";
+	info += "Total Size of Data (MB): " + to_string((NUM_BLOCK*(BLOCK_SIZE+sizeof(TYPE_ID)))/1048576.0) + "\n";
+	info += "Total Size of ORAM (MB): " + to_string(BUCKET_SIZE*NUM_NODES*(BLOCK_SIZE+sizeof(TYPE_ID))/1048576.0) + "\n";
+	
+	#if defined(PRECOMP_MODE)
+		info += "PRECOMPUTATION MODE: Active\n";
+	#else
+		info += "PRECOMPUTATION MODE: Inactive\n";
+	#endif 
+	
+	if((file_out = fopen(path.c_str(),"w+")) == NULL){
+		cout<< "	File Cannot be Opened!!" <<endl;
+		exit;
+	}
+	fputs(dt, file_out);
+	fputs(info.c_str(), file_out);
+	fclose(file_out);
+	
+	tm *now_time = localtime(&now);
+	if(now != -1)
+		strftime(timestamp,16,"%d%m_%H%M",now_time);
     
 }
 
@@ -346,6 +378,7 @@ int ClientDuetORAM::access(TYPE_ID blockID)
 	cout << "================================================================" << endl;
 
     // 1. get the path & index of the block of interest
+    auto start_retrieve = time_now;
     TYPE_INDEX pathID = pos_map[blockID].pathID;
     TYPE_INDEX pathIdx = pos_map[blockID].pathIdx;
     block iv1 = pos_map[blockID].iv1;
@@ -399,6 +432,8 @@ int ClientDuetORAM::access(TYPE_ID blockID)
     }
 
     end = time_now;
+    auto end_retrieve = time_now;
+    exp_logs[9] = std::chrono::duration_cast<std::chrono::nanoseconds>(end_retrieve-start_retrieve).count();
     cout<< "	[ClientDuetORAM] All Shares Retrieved in " << std::chrono::duration_cast<std::chrono::nanoseconds>(end-start).count()<< " ns"<<endl;
     exp_logs[2] = thread_max;
     thread_max = 0;
@@ -496,32 +531,35 @@ int ClientDuetORAM::access(TYPE_ID blockID)
     
 
     // 9. Perform eviction if needed
+    auto start_evict = time_now;
     if (this->numRead == 0)
     {
         cout << "================================================================" << endl;
 		cout << "STARTING EVICTION-" << this->numEvict+1 <<endl;
 		cout << "================================================================" << endl;
 
-        // 9.1 generate permutation matrices        //NOTE: Offline process
-        cout << "================================================================" << endl;
-        cout << "STARTING INITIALIZE PERMUTATION MATRICES!" <<endl; 
-        cout << "================================================================" << endl;
+        // // 9.1 generate permutation matrices        //NOTE: Offline process
+        // cout << "================================================================" << endl;
+        // cout << "STARTING INITIALIZE PERMUTATION MATRICES!" <<endl; 
+        // cout << "================================================================" << endl;
 
-        PRG prg_permutation;
-        SecretSharedShuffle sss;
-        prg_permutation.random_block(&this->key3, 1);
-        prg_permutation.random_block(&this->key4, 1);
-        sss.initialize(this->key3, this->key4, this->permutationAa, this->permutationBb, this->u1, this->u2);
+        // PRG prg_permutation;
+        // SecretSharedShuffle sss;
+        // prg_permutation.random_block(&this->key3, 1);
+        // prg_permutation.random_block(&this->key4, 1);
+        // sss.initialize(this->key3, this->key4, this->permutationAa, this->permutationBb, this->u1, this->u2);
         
 
-        // 9.2 send punctured matrix and secret key to servers
-        memcpy(&key_permutation_buffer_out[0][0], &this->key4, sizeof(block));  //NOTE: key4 with permutationAa
-        memcpy(&key_permutation_buffer_out[0][1], &permutationAa[0], sizeof(block)*(H+2)*BUCKET_SIZE*(H+2)*BUCKET_SIZE);
-        memcpy(&key_permutation_buffer_out[1][0], &this->key3, sizeof(block));  //NOTE: key3 with permutationBb
-        memcpy(&key_permutation_buffer_out[1][1], &permutationBb[0], sizeof(block)*(H+2)*BUCKET_SIZE*(H+2)*BUCKET_SIZE);
-        // COMMUNICATION: 离线发送穿刺矩阵和密钥
-        sendInitialPermutation(this->key_permutation_buffer_out);
-        cout << "   [sendInitialPermutation] SENDING INITIALIZE PERMUTATION MATRICES FINISHED!" <<endl; 
+        // // 9.2 send punctured matrix and secret key to servers
+        // memcpy(&key_permutation_buffer_out[0][0], &this->key4, sizeof(block));  //NOTE: key4 with permutationAa
+        // memcpy(&key_permutation_buffer_out[0][1], &permutationAa[0], sizeof(block)*(H+2)*BUCKET_SIZE*(H+2)*BUCKET_SIZE);
+        // memcpy(&key_permutation_buffer_out[1][0], &this->key3, sizeof(block));  //NOTE: key3 with permutationBb
+        // memcpy(&key_permutation_buffer_out[1][1], &permutationBb[0], sizeof(block)*(H+2)*BUCKET_SIZE*(H+2)*BUCKET_SIZE);
+        // // COMMUNICATION: 离线发送穿刺矩阵和密钥
+        // sendInitialPermutation(this->key_permutation_buffer_out);
+        // cout << "   [sendInitialPermutation] SENDING INITIALIZE PERMUTATION MATRICES FINISHED!" <<endl; 
+
+        SecretSharedShuffle sss;
 
         // 9.3 generate shuffle
         start = time_now;
@@ -541,37 +579,281 @@ int ClientDuetORAM::access(TYPE_ID blockID)
         block seed_iv2;
         sss.generateShuffle(this->blocks, evict_pathID, this->evict_pi, this->pos_map, this->metaData, seed_iv1, seed_iv2);
         createSubPermutation(this->sub_pi_1, this->sub_pi_2);
-        
+
         end = time_now;
         cout<< "	[ClientDuetORAM] Evict Permutation Created in " << std::chrono::duration_cast<std::chrono::nanoseconds>(end-start).count()<< " ns"<<endl;
 		exp_logs[5] = std::chrono::duration_cast<std::chrono::nanoseconds>(end-start).count();
 
-        // 9.4 generate circular shift for shared permutation
-        for (TYPE_INDEX j = 0; j < SIZE_PI; j++)
-        {
-            this->circularShift_1[j] = (this->sub_pi_1[j] - this->u1[j] + SIZE_PI) % SIZE_PI;
-            this->circularShift_2[j] = (this->sub_pi_2[j] - this->u2[j] + SIZE_PI) % SIZE_PI;
+        // // 9.4 generate circular shift for shared permutation
+        // for (TYPE_INDEX j = 0; j < SIZE_PI; j++)
+        // {
+        //     this->circularShift_1[j] = (this->sub_pi_1[j] - this->u1[j] + SIZE_PI) % SIZE_PI;
+        //     this->circularShift_2[j] = (this->sub_pi_2[j] - this->u2[j] + SIZE_PI) % SIZE_PI;
+        // }
+
+        //9.4 generate Delta, a and b - Optimized for -O0 compilation
+        auto start_generate_ab_delta = time_now;
+        TYPE_DATA** delta1 = new TYPE_DATA*[DATA_CHUNKS];
+        TYPE_DATA** a1 = new TYPE_DATA*[DATA_CHUNKS];
+        TYPE_DATA** b1 = new TYPE_DATA*[DATA_CHUNKS];
+        TYPE_DATA** delta2 = new TYPE_DATA*[DATA_CHUNKS];
+        TYPE_DATA** a2 = new TYPE_DATA*[DATA_CHUNKS];
+        TYPE_DATA** b2 = new TYPE_DATA*[DATA_CHUNKS];
+        PRG prg;
+        
+        const size_t chunk_size = sizeof(TYPE_DATA) * SIZE_PI;
+        
+        // Optimized allocation/initialization with 4-way loop unrolling
+        TYPE_INDEX i = 0;
+        TYPE_INDEX limit = DATA_CHUNKS - 3;
+        
+        for (; i < limit; i += 4) {
+            // Batch 1
+            a1[i] = new TYPE_DATA[SIZE_PI];
+            b1[i] = new TYPE_DATA[SIZE_PI];
+            delta1[i] = new TYPE_DATA[SIZE_PI];
+            a2[i] = new TYPE_DATA[SIZE_PI];
+            b2[i] = new TYPE_DATA[SIZE_PI];
+            delta2[i] = new TYPE_DATA[SIZE_PI];
+            memset(a1[i], 0, chunk_size);
+            memset(b1[i], 0, chunk_size);
+            memset(delta1[i], 0, chunk_size);
+            memset(a2[i], 0, chunk_size);
+            memset(b2[i], 0, chunk_size);
+            memset(delta2[i], 0, chunk_size);
+            prg.random_data_unaligned(a1[i], chunk_size);
+            prg.random_data_unaligned(b1[i], chunk_size);
+            prg.random_data_unaligned(a2[i], chunk_size);
+            prg.random_data_unaligned(b2[i], chunk_size);
+            
+            // Batch 2
+            a1[i+1] = new TYPE_DATA[SIZE_PI];
+            b1[i+1] = new TYPE_DATA[SIZE_PI];
+            delta1[i+1] = new TYPE_DATA[SIZE_PI];
+            a2[i+1] = new TYPE_DATA[SIZE_PI];
+            b2[i+1] = new TYPE_DATA[SIZE_PI];
+            delta2[i+1] = new TYPE_DATA[SIZE_PI];
+            memset(a1[i+1], 0, chunk_size);
+            memset(b1[i+1], 0, chunk_size);
+            memset(delta1[i+1], 0, chunk_size);
+            memset(a2[i+1], 0, chunk_size);
+            memset(b2[i+1], 0, chunk_size);
+            memset(delta2[i+1], 0, chunk_size);
+            prg.random_data_unaligned(a1[i+1], chunk_size);
+            prg.random_data_unaligned(b1[i+1], chunk_size);
+            prg.random_data_unaligned(a2[i+1], chunk_size);
+            prg.random_data_unaligned(b2[i+1], chunk_size);
+            
+            // Batch 3
+            a1[i+2] = new TYPE_DATA[SIZE_PI];
+            b1[i+2] = new TYPE_DATA[SIZE_PI];
+            delta1[i+2] = new TYPE_DATA[SIZE_PI];
+            a2[i+2] = new TYPE_DATA[SIZE_PI];
+            b2[i+2] = new TYPE_DATA[SIZE_PI];
+            delta2[i+2] = new TYPE_DATA[SIZE_PI];
+            memset(a1[i+2], 0, chunk_size);
+            memset(b1[i+2], 0, chunk_size);
+            memset(delta1[i+2], 0, chunk_size);
+            memset(a2[i+2], 0, chunk_size);
+            memset(b2[i+2], 0, chunk_size);
+            memset(delta2[i+2], 0, chunk_size);
+            prg.random_data_unaligned(a1[i+2], chunk_size);
+            prg.random_data_unaligned(b1[i+2], chunk_size);
+            prg.random_data_unaligned(a2[i+2], chunk_size);
+            prg.random_data_unaligned(b2[i+2], chunk_size);
+            
+            // Batch 4
+            a1[i+3] = new TYPE_DATA[SIZE_PI];
+            b1[i+3] = new TYPE_DATA[SIZE_PI];
+            delta1[i+3] = new TYPE_DATA[SIZE_PI];
+            a2[i+3] = new TYPE_DATA[SIZE_PI];
+            b2[i+3] = new TYPE_DATA[SIZE_PI];
+            delta2[i+3] = new TYPE_DATA[SIZE_PI];
+            memset(a1[i+3], 0, chunk_size);
+            memset(b1[i+3], 0, chunk_size);
+            memset(delta1[i+3], 0, chunk_size);
+            memset(a2[i+3], 0, chunk_size);
+            memset(b2[i+3], 0, chunk_size);
+            memset(delta2[i+3], 0, chunk_size);
+            prg.random_data_unaligned(a1[i+3], chunk_size);
+            prg.random_data_unaligned(b1[i+3], chunk_size);
+            prg.random_data_unaligned(a2[i+3], chunk_size);
+            prg.random_data_unaligned(b2[i+3], chunk_size);
+        }
+        
+        // Cleanup remaining 0-3 chunks
+        for (; i < DATA_CHUNKS; i++) {
+            a1[i] = new TYPE_DATA[SIZE_PI];
+            b1[i] = new TYPE_DATA[SIZE_PI];
+            delta1[i] = new TYPE_DATA[SIZE_PI];
+            a2[i] = new TYPE_DATA[SIZE_PI];
+            b2[i] = new TYPE_DATA[SIZE_PI];
+            delta2[i] = new TYPE_DATA[SIZE_PI];
+            memset(a1[i], 0, chunk_size);
+            memset(b1[i], 0, chunk_size);
+            memset(delta1[i], 0, chunk_size);
+            memset(a2[i], 0, chunk_size);
+            memset(b2[i], 0, chunk_size);
+            memset(delta2[i], 0, chunk_size);
+            prg.random_data_unaligned(a1[i], chunk_size);
+            prg.random_data_unaligned(b1[i], chunk_size);
+            prg.random_data_unaligned(a2[i], chunk_size);
+            prg.random_data_unaligned(b2[i], chunk_size);
         }
 
-        // eviction information for server 0
-        memcpy(&evict_buffer_out[0][0], &evict_pathID, sizeof(TYPE_INDEX));
-        memcpy(&evict_buffer_out[0][sizeof(TYPE_INDEX)], &seed_iv1, sizeof(block));
-        memcpy(&evict_buffer_out[0][sizeof(TYPE_INDEX)+sizeof(block)], &sub_pi_1[0], sizeof(TYPE_INDEX)*SIZE_PI);
-        memcpy(&evict_buffer_out[0][sizeof(TYPE_INDEX)+sizeof(block)+sizeof(TYPE_INDEX)*SIZE_PI], &circularShift_1[0], sizeof(TYPE_INDEX)*SIZE_PI);
-        memcpy(&evict_buffer_out[0][sizeof(TYPE_INDEX)+sizeof(block)+2*sizeof(TYPE_INDEX)*SIZE_PI], &circularShift_2[0], sizeof(TYPE_INDEX)*SIZE_PI);
+        // CRITICAL OPTIMIZATION: Delta calculation with 8-way inner loop unrolling
+        // Reduces branch overhead by 87.5% - crucial at -O0 where this is the hottest path
+        for (TYPE_INDEX i = 0; i < DATA_CHUNKS; i++)
+        {
+            TYPE_INDEX j = 0;
+            TYPE_INDEX inner_limit = SIZE_PI - 7;
+            
+            // Main loop: process 8 elements per iteration
+            for (; j < inner_limit; j += 8) {
+                delta1[i][j]   = a2[i][sub_pi_2[j]]   ^ b2[i][j];
+                delta2[i][j]   = a1[i][sub_pi_1[j]]   ^ b1[i][j];
+                
+                delta1[i][j+1] = a2[i][sub_pi_2[j+1]] ^ b2[i][j+1];
+                delta2[i][j+1] = a1[i][sub_pi_1[j+1]] ^ b1[i][j+1];
+                
+                delta1[i][j+2] = a2[i][sub_pi_2[j+2]] ^ b2[i][j+2];
+                delta2[i][j+2] = a1[i][sub_pi_1[j+2]] ^ b1[i][j+2];
+                
+                delta1[i][j+3] = a2[i][sub_pi_2[j+3]] ^ b2[i][j+3];
+                delta2[i][j+3] = a1[i][sub_pi_1[j+3]] ^ b1[i][j+3];
+                
+                delta1[i][j+4] = a2[i][sub_pi_2[j+4]] ^ b2[i][j+4];
+                delta2[i][j+4] = a1[i][sub_pi_1[j+4]] ^ b1[i][j+4];
+                
+                delta1[i][j+5] = a2[i][sub_pi_2[j+5]] ^ b2[i][j+5];
+                delta2[i][j+5] = a1[i][sub_pi_1[j+5]] ^ b1[i][j+5];
+                
+                delta1[i][j+6] = a2[i][sub_pi_2[j+6]] ^ b2[i][j+6];
+                delta2[i][j+6] = a1[i][sub_pi_1[j+6]] ^ b1[i][j+6];
+                
+                delta1[i][j+7] = a2[i][sub_pi_2[j+7]] ^ b2[i][j+7];
+                delta2[i][j+7] = a1[i][sub_pi_1[j+7]] ^ b1[i][j+7];
+            }
+            
+            // Cleanup: handle remaining 0-7 elements
+            for (; j < SIZE_PI; j++) {
+                delta1[i][j] = a2[i][sub_pi_2[j]] ^ b2[i][j];
+                delta2[i][j] = a1[i][sub_pi_1[j]] ^ b1[i][j];
+            }
+        }
+        auto end_generate_ab_delta = time_now;
+        exp_logs[13] = std::chrono::duration_cast<std::chrono::nanoseconds>(end_generate_ab_delta-start_generate_ab_delta).count();
 
-        // eviction information for server 1
-        memcpy(&evict_buffer_out[1][0], &evict_pathID, sizeof(TYPE_INDEX));
-        memcpy(&evict_buffer_out[1][sizeof(TYPE_INDEX)], &seed_iv2, sizeof(block));
-        memcpy(&evict_buffer_out[1][sizeof(TYPE_INDEX)+sizeof(block)], &sub_pi_2[0], sizeof(TYPE_INDEX)*SIZE_PI);
-        memcpy(&evict_buffer_out[1][sizeof(TYPE_INDEX)+sizeof(block)+sizeof(TYPE_INDEX)*SIZE_PI], &circularShift_1[0], sizeof(TYPE_INDEX)*SIZE_PI);
-        memcpy(&evict_buffer_out[1][sizeof(TYPE_INDEX)+sizeof(block)+2*sizeof(TYPE_INDEX)*SIZE_PI], &circularShift_2[0], sizeof(TYPE_INDEX)*SIZE_PI);
 
+        auto start_evict_send = time_now;
+        // eviction information for server 0 - Optimized buffer packing
+        size_t offset = 0;
+        memcpy(&evict_buffer_out[0][offset], &evict_pathID, sizeof(TYPE_INDEX));
+        offset += sizeof(TYPE_INDEX);
+        
+        memcpy(&evict_buffer_out[0][offset], &seed_iv1, sizeof(block));
+        offset += sizeof(block);
+        
+        memcpy(&evict_buffer_out[0][offset], &sub_pi_1[0], sizeof(TYPE_INDEX)*SIZE_PI);
+        offset += sizeof(TYPE_INDEX)*SIZE_PI;
+        
+        // Optimized delta1 copy with 4-way unrolling
+        i = 0;
+        limit = DATA_CHUNKS - 3;
+        for (; i < limit; i += 4) {
+            memcpy(&evict_buffer_out[0][offset], delta1[i],   chunk_size); offset += chunk_size;
+            memcpy(&evict_buffer_out[0][offset], delta1[i+1], chunk_size); offset += chunk_size;
+            memcpy(&evict_buffer_out[0][offset], delta1[i+2], chunk_size); offset += chunk_size;
+            memcpy(&evict_buffer_out[0][offset], delta1[i+3], chunk_size); offset += chunk_size;
+        }
+        for (; i < DATA_CHUNKS; i++) {
+            memcpy(&evict_buffer_out[0][offset], delta1[i], chunk_size);
+            offset += chunk_size;
+        }
+        
+        // Optimized a1 copy with 4-way unrolling
+        i = 0;
+        for (; i < limit; i += 4) {
+            memcpy(&evict_buffer_out[0][offset], a1[i],   chunk_size); offset += chunk_size;
+            memcpy(&evict_buffer_out[0][offset], a1[i+1], chunk_size); offset += chunk_size;
+            memcpy(&evict_buffer_out[0][offset], a1[i+2], chunk_size); offset += chunk_size;
+            memcpy(&evict_buffer_out[0][offset], a1[i+3], chunk_size); offset += chunk_size;
+        }
+        for (; i < DATA_CHUNKS; i++) {
+            memcpy(&evict_buffer_out[0][offset], a1[i], chunk_size);
+            offset += chunk_size;
+        }
+        
+        // Optimized b1 copy with 4-way unrolling
+        i = 0;
+        for (; i < limit; i += 4) {
+            memcpy(&evict_buffer_out[0][offset], b1[i],   chunk_size); offset += chunk_size;
+            memcpy(&evict_buffer_out[0][offset], b1[i+1], chunk_size); offset += chunk_size;
+            memcpy(&evict_buffer_out[0][offset], b1[i+2], chunk_size); offset += chunk_size;
+            memcpy(&evict_buffer_out[0][offset], b1[i+3], chunk_size); offset += chunk_size;
+        }
+        for (; i < DATA_CHUNKS; i++) {
+            memcpy(&evict_buffer_out[0][offset], b1[i], chunk_size);
+            offset += chunk_size;
+        }
+
+        // eviction information for server 1 (server2) - Optimized buffer packing
+        offset = 0;
+        memcpy(&evict_buffer_out[1][offset], &evict_pathID, sizeof(TYPE_INDEX));
+        offset += sizeof(TYPE_INDEX);
+        
+        memcpy(&evict_buffer_out[1][offset], &seed_iv2, sizeof(block));
+        offset += sizeof(block);
+        
+        memcpy(&evict_buffer_out[1][offset], &sub_pi_2[0], sizeof(TYPE_INDEX)*SIZE_PI);
+        offset += sizeof(TYPE_INDEX)*SIZE_PI;
+        
+        // Optimized delta2 copy with 4-way unrolling
+        i = 0;
+        for (; i < limit; i += 4) {
+            memcpy(&evict_buffer_out[1][offset], delta2[i],   chunk_size); offset += chunk_size;
+            memcpy(&evict_buffer_out[1][offset], delta2[i+1], chunk_size); offset += chunk_size;
+            memcpy(&evict_buffer_out[1][offset], delta2[i+2], chunk_size); offset += chunk_size;
+            memcpy(&evict_buffer_out[1][offset], delta2[i+3], chunk_size); offset += chunk_size;
+        }
+        for (; i < DATA_CHUNKS; i++) {
+            memcpy(&evict_buffer_out[1][offset], delta2[i], chunk_size);
+            offset += chunk_size;
+        }
+        
+        // Optimized a2 copy with 4-way unrolling
+        i = 0;
+        for (; i < limit; i += 4) {
+            memcpy(&evict_buffer_out[1][offset], a2[i],   chunk_size); offset += chunk_size;
+            memcpy(&evict_buffer_out[1][offset], a2[i+1], chunk_size); offset += chunk_size;
+            memcpy(&evict_buffer_out[1][offset], a2[i+2], chunk_size); offset += chunk_size;
+            memcpy(&evict_buffer_out[1][offset], a2[i+3], chunk_size); offset += chunk_size;
+        }
+        for (; i < DATA_CHUNKS; i++) {
+            memcpy(&evict_buffer_out[1][offset], a2[i], chunk_size);
+            offset += chunk_size;
+        }
+        
+        // Optimized b2 copy with 4-way unrolling
+        i = 0;
+        for (; i < limit; i += 4) {
+            memcpy(&evict_buffer_out[1][offset], b2[i],   chunk_size); offset += chunk_size;
+            memcpy(&evict_buffer_out[1][offset], b2[i+1], chunk_size); offset += chunk_size;
+            memcpy(&evict_buffer_out[1][offset], b2[i+2], chunk_size); offset += chunk_size;
+            memcpy(&evict_buffer_out[1][offset], b2[i+3], chunk_size); offset += chunk_size;
+        }
+        for (; i < DATA_CHUNKS; i++) {
+            memcpy(&evict_buffer_out[1][offset], b2[i], chunk_size);
+            offset += chunk_size;
+        }
+
+
+        
         // 9.5 send eviction information to servers
         for (int i = 0; i < NUM_SERVERS; i++)
         {
             // COMMUNICATION: 发送驱逐信息
-            thread_args[i] = struct_socket(SERVER_ADDR[i] + ":" + std::to_string(SERVER_PORT+i*NUM_SERVERS+i), evict_buffer_out[i], sizeof(TYPE_INDEX) + sizeof(block) + 3 * sizeof(TYPE_INDEX) * SIZE_PI, NULL, 0, CMD_SEND_EVICT, NULL);
+            thread_args[i] = struct_socket(SERVER_ADDR[i] + ":" + std::to_string(SERVER_PORT+i*NUM_SERVERS+i), evict_buffer_out[i], sizeof(TYPE_INDEX) + sizeof(block) + sizeof(TYPE_INDEX)*SIZE_PI + 3 * sizeof(TYPE_DATA)*DATA_CHUNKS*SIZE_PI, NULL, 0, CMD_SEND_EVICT, NULL);
             pthread_create(&thread_sockets[i], NULL, &ClientDuetORAM::thread_socket_func, (void*)&thread_args[i]);
         }
         
@@ -579,6 +861,9 @@ int ClientDuetORAM::access(TYPE_ID blockID)
         {
             pthread_join(thread_sockets[i], NULL);
         }
+
+        auto end_evict_send = time_now;
+        exp_logs[14] = std::chrono::duration_cast<std::chrono::nanoseconds>(end_evict_send-start_evict_send).count();
 
         end = time_now;
         cout<< "	[ClientDuetORAM] Eviction Permutation Send in " << std::chrono::duration_cast<std::chrono::nanoseconds>(end-start).count()<< " ns"<<endl;
@@ -591,7 +876,10 @@ int ClientDuetORAM::access(TYPE_ID blockID)
 		cout << "================================================================" << endl;
         
         this->numEvict = (numEvict+1) % N_leaf;
+        
     }
+    auto end_evict = time_now;
+    exp_logs[10] = std::chrono::duration_cast<std::chrono::nanoseconds>(end_evict-start_evict).count();
 
     // 11. store local info to disk
     FILE* local_data = NULL;
@@ -607,8 +895,8 @@ int ClientDuetORAM::access(TYPE_ID blockID)
 	fclose(local_data);
      
 	// 12. write log
-	Utils::write_list_to_file(to_string(HEIGHT)+"_" + to_string(BLOCK_SIZE)+"_client_" + timestamp + ".txt",logDir, exp_logs, 9);
-	memset(exp_logs, 0, sizeof(unsigned long int)*9);
+	Utils::write_list_to_file(to_string(HEIGHT)+"_" + to_string(BLOCK_SIZE)+"_client_" + timestamp + ".txt",logDir, exp_logs, 15);
+	memset(exp_logs, 0, sizeof(unsigned long int)*15);
         
 
     return 0;
