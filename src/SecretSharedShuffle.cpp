@@ -24,8 +24,6 @@ int SecretSharedShuffle::generateShuffle(vector<struct_block> blocks, TYPE_INDEX
     prg.reseed(&seed_iv2);
     prg.random_block(list_iv2, BUCKET_SIZE*(H+2));
 
-    
-
     for (int l = H; l >= 0; l--)
     {
         if (l == H)
@@ -160,7 +158,6 @@ int SecretSharedShuffle::generateShuffle(vector<struct_block> blocks, TYPE_INDEX
     
     return 0;
 }
-
 
 TYPE_INDEX SecretSharedShuffle::P(TYPE_INDEX pathID, int l)
 {
