@@ -547,6 +547,10 @@ int ClientDuetORAM::access(TYPE_ID blockID)
     
 
     // 9. Perform eviction if needed
+    auto eviction_start = time_now;
+    auto eviction_end = time_now;
+    auto start_memcpy = time_now;
+    auto end_memcpy = time_now;
     if (this->numRead == 0)
     {
         cout << "================================================================" << endl;
@@ -581,6 +585,7 @@ int ClientDuetORAM::access(TYPE_ID blockID)
         cout << "   [sendInitialPermutation] SENDING INITIALIZE PERMUTATION MATRICES FINISHED!" <<endl; 
 
         // 9.3 generate shuffle
+        eviction_start = time_now;
         start = time_now;
         blocks.clear();
         // 9.3.1 read blocks from the path and sibling bucket of leaf bucket
@@ -614,7 +619,8 @@ int ClientDuetORAM::access(TYPE_ID blockID)
         exp_logs[11] = std::chrono::duration_cast<std::chrono::nanoseconds>(end-start).count();
 
         // eviction information for server 0
-        start = time_now;
+        
+        start_memcpy = time_now;
         memcpy(&evict_buffer_out[0][0], &evict_pathID, sizeof(TYPE_INDEX));
         memcpy(&evict_buffer_out[0][sizeof(TYPE_INDEX)], &seed_iv1, sizeof(block));
         memcpy(&evict_buffer_out[0][sizeof(TYPE_INDEX)+sizeof(block)], &sub_pi_1[0], sizeof(TYPE_INDEX)*SIZE_PI);
@@ -627,8 +633,11 @@ int ClientDuetORAM::access(TYPE_ID blockID)
         memcpy(&evict_buffer_out[1][sizeof(TYPE_INDEX)+sizeof(block)], &sub_pi_2[0], sizeof(TYPE_INDEX)*SIZE_PI);
         memcpy(&evict_buffer_out[1][sizeof(TYPE_INDEX)+sizeof(block)+sizeof(TYPE_INDEX)*SIZE_PI], &circularShift_1[0], sizeof(TYPE_INDEX)*SIZE_PI);
         memcpy(&evict_buffer_out[1][sizeof(TYPE_INDEX)+sizeof(block)+2*sizeof(TYPE_INDEX)*SIZE_PI], &circularShift_2[0], sizeof(TYPE_INDEX)*SIZE_PI);
+        end_memcpy = time_now;
+        exp_logs[15] = std::chrono::duration_cast<std::chrono::nanoseconds>(end_memcpy-start_memcpy).count();
 
         // 9.5 send eviction information to servers
+        start = time_now;
         for (int i = 0; i < NUM_SERVERS; i++)
         {
             // COMMUNICATION: 发送驱逐信息
@@ -642,9 +651,11 @@ int ClientDuetORAM::access(TYPE_ID blockID)
         }
 
         end = time_now;
+        eviction_end = time_now;
+        exp_logs[14] = std::chrono::duration_cast<std::chrono::nanoseconds>(eviction_end-eviction_start).count();
         exp_logs[12] = std::chrono::duration_cast<std::chrono::nanoseconds>(end-start).count();
         cout<< "	[ClientDuetORAM] Eviction Permutation Send in " << std::chrono::duration_cast<std::chrono::nanoseconds>(end-start).count()<< " ns"<<endl;
-        
+
         exp_logs[13] = thread_max;
         thread_max = 0;
 		
