@@ -2,6 +2,7 @@ data/
 lib/
 .vscode
 build/
+README.md
 test_eviction_bug.md
 HPC_OPTIMIZATION_REPORT.md
 OPTIMIZATION_SUMMARY.md

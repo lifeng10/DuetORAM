@@ -602,6 +602,8 @@ int ClientDuetORAM::access(TYPE_ID blockID)
 	fwrite(this->pos_map, 1, (NUM_BLOCK+1)*sizeof(TYPE_POS_MAP), local_data);
 	fwrite(&this->numEvict, sizeof(this->numEvict), 1, local_data);
 	fwrite(&this->numRead, sizeof(this->numRead), 1, local_data);
+	fwrite(&this->k1, sizeof(this->k1), 1, local_data);
+	fwrite(&this->k2, sizeof(this->k2), 1, local_data);
 	fclose(local_data);
      
 	// 12. write log
