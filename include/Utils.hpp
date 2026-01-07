@@ -2,6 +2,7 @@
 #define UTILS_HPP
 
 #include "config.h"
+#include <random>
 
 class Utils
 {
@@ -91,7 +92,10 @@ public:
 	#if defined(NTL_LIB)
 		return RandomBnd(bound);
 	#else
-		return _LongRand() % bound;
+		if (bound == 0) return 0; // avoid UB in distribution
+		static thread_local std::mt19937_64 rng(std::random_device{}());
+		std::uniform_int_distribution<unsigned long long> dist(0ULL, bound - 1);
+		return dist(rng);
 	#endif
 	}
 };
