@@ -1,5 +1,7 @@
 #include "ClientDuetORAM.hpp"
 #include "DuetORAM.hpp"
+#include <thread>
+#include <chrono>
 
 unsigned long int ClientDuetORAM::exp_logs[19];
 unsigned long int ClientDuetORAM::thread_max = 0; //用于记录执行线程的时间。因为有多个线程，只记录耗时最长的线程所用的时间
@@ -583,6 +585,10 @@ int ClientDuetORAM::access(TYPE_ID blockID)
         end = time_now;
         exp_logs[9] = std::chrono::duration_cast<std::chrono::nanoseconds>(end-start).count();
         cout << "   [sendInitialPermutation] SENDING INITIALIZE PERMUTATION MATRICES FINISHED!" <<endl; 
+
+        // 等待服务器处理，避免客户端过快继续下一步（可调整时间）
+        // 等待60秒，让服务器有足够时间处理完离线的置换矩阵接收和预处理
+        std::this_thread::sleep_for(std::chrono::milliseconds(60000));
 
         // 9.3 generate shuffle
         eviction_start = time_now;
