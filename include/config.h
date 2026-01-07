@@ -44,7 +44,7 @@ enum Operation {READ, WRITE};
 #define BLOCK_SIZE 8
 #define HEIGHT 4
 #define BUCKET_SIZE 4
-#define EVICT_RATE 2
+#define EVICT_RATE 3
 const int H = HEIGHT; 
 
 static const unsigned long long P = 1073742353; //prime field - should have length equal to the defined TYPE_DATA

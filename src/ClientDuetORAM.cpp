@@ -601,145 +601,25 @@ int ClientDuetORAM::access(TYPE_ID blockID)
         TYPE_DATA** b2 = new TYPE_DATA*[DATA_CHUNKS];
         PRG prg;
         
-        const size_t chunk_size = sizeof(TYPE_DATA) * SIZE_PI;
-        
-        // Optimized allocation/initialization with 4-way loop unrolling
-        TYPE_INDEX i = 0;
-        TYPE_INDEX limit = DATA_CHUNKS - 3;
-        
-        for (; i < limit; i += 4) {
-            // Batch 1
-            a1[i] = new TYPE_DATA[SIZE_PI];
-            b1[i] = new TYPE_DATA[SIZE_PI];
-            delta1[i] = new TYPE_DATA[SIZE_PI];
-            a2[i] = new TYPE_DATA[SIZE_PI];
-            b2[i] = new TYPE_DATA[SIZE_PI];
-            delta2[i] = new TYPE_DATA[SIZE_PI];
-            memset(a1[i], 0, chunk_size);
-            memset(b1[i], 0, chunk_size);
-            memset(delta1[i], 0, chunk_size);
-            memset(a2[i], 0, chunk_size);
-            memset(b2[i], 0, chunk_size);
-            memset(delta2[i], 0, chunk_size);
-            prg.random_data_unaligned(a1[i], chunk_size);
-            prg.random_data_unaligned(b1[i], chunk_size);
-            prg.random_data_unaligned(a2[i], chunk_size);
-            prg.random_data_unaligned(b2[i], chunk_size);
-            
-            // Batch 2
-            a1[i+1] = new TYPE_DATA[SIZE_PI];
-            b1[i+1] = new TYPE_DATA[SIZE_PI];
-            delta1[i+1] = new TYPE_DATA[SIZE_PI];
-            a2[i+1] = new TYPE_DATA[SIZE_PI];
-            b2[i+1] = new TYPE_DATA[SIZE_PI];
-            delta2[i+1] = new TYPE_DATA[SIZE_PI];
-            memset(a1[i+1], 0, chunk_size);
-            memset(b1[i+1], 0, chunk_size);
-            memset(delta1[i+1], 0, chunk_size);
-            memset(a2[i+1], 0, chunk_size);
-            memset(b2[i+1], 0, chunk_size);
-            memset(delta2[i+1], 0, chunk_size);
-            prg.random_data_unaligned(a1[i+1], chunk_size);
-            prg.random_data_unaligned(b1[i+1], chunk_size);
-            prg.random_data_unaligned(a2[i+1], chunk_size);
-            prg.random_data_unaligned(b2[i+1], chunk_size);
-            
-            // Batch 3
-            a1[i+2] = new TYPE_DATA[SIZE_PI];
-            b1[i+2] = new TYPE_DATA[SIZE_PI];
-            delta1[i+2] = new TYPE_DATA[SIZE_PI];
-            a2[i+2] = new TYPE_DATA[SIZE_PI];
-            b2[i+2] = new TYPE_DATA[SIZE_PI];
-            delta2[i+2] = new TYPE_DATA[SIZE_PI];
-            memset(a1[i+2], 0, chunk_size);
-            memset(b1[i+2], 0, chunk_size);
-            memset(delta1[i+2], 0, chunk_size);
-            memset(a2[i+2], 0, chunk_size);
-            memset(b2[i+2], 0, chunk_size);
-            memset(delta2[i+2], 0, chunk_size);
-            prg.random_data_unaligned(a1[i+2], chunk_size);
-            prg.random_data_unaligned(b1[i+2], chunk_size);
-            prg.random_data_unaligned(a2[i+2], chunk_size);
-            prg.random_data_unaligned(b2[i+2], chunk_size);
-            
-            // Batch 4
-            a1[i+3] = new TYPE_DATA[SIZE_PI];
-            b1[i+3] = new TYPE_DATA[SIZE_PI];
-            delta1[i+3] = new TYPE_DATA[SIZE_PI];
-            a2[i+3] = new TYPE_DATA[SIZE_PI];
-            b2[i+3] = new TYPE_DATA[SIZE_PI];
-            delta2[i+3] = new TYPE_DATA[SIZE_PI];
-            memset(a1[i+3], 0, chunk_size);
-            memset(b1[i+3], 0, chunk_size);
-            memset(delta1[i+3], 0, chunk_size);
-            memset(a2[i+3], 0, chunk_size);
-            memset(b2[i+3], 0, chunk_size);
-            memset(delta2[i+3], 0, chunk_size);
-            prg.random_data_unaligned(a1[i+3], chunk_size);
-            prg.random_data_unaligned(b1[i+3], chunk_size);
-            prg.random_data_unaligned(a2[i+3], chunk_size);
-            prg.random_data_unaligned(b2[i+3], chunk_size);
-        }
-        
-        // Cleanup remaining 0-3 chunks
-        for (; i < DATA_CHUNKS; i++) {
-            a1[i] = new TYPE_DATA[SIZE_PI];
-            b1[i] = new TYPE_DATA[SIZE_PI];
-            delta1[i] = new TYPE_DATA[SIZE_PI];
-            a2[i] = new TYPE_DATA[SIZE_PI];
-            b2[i] = new TYPE_DATA[SIZE_PI];
-            delta2[i] = new TYPE_DATA[SIZE_PI];
-            memset(a1[i], 0, chunk_size);
-            memset(b1[i], 0, chunk_size);
-            memset(delta1[i], 0, chunk_size);
-            memset(a2[i], 0, chunk_size);
-            memset(b2[i], 0, chunk_size);
-            memset(delta2[i], 0, chunk_size);
-            prg.random_data_unaligned(a1[i], chunk_size);
-            prg.random_data_unaligned(b1[i], chunk_size);
-            prg.random_data_unaligned(a2[i], chunk_size);
-            prg.random_data_unaligned(b2[i], chunk_size);
-        }
-
-        // CRITICAL OPTIMIZATION: Delta calculation with 8-way inner loop unrolling
-        // Reduces branch overhead by 87.5% - crucial at -O0 where this is the hottest path
         for (TYPE_INDEX i = 0; i < DATA_CHUNKS; i++)
         {
-            TYPE_INDEX j = 0;
-            TYPE_INDEX inner_limit = SIZE_PI - 7;
-            
-            // Main loop: process 8 elements per iteration
-            for (; j < inner_limit; j += 8) {
-                delta1[i][j]   = a2[i][sub_pi_2[j]]   ^ b2[i][j];
-                delta2[i][j]   = a1[i][sub_pi_1[j]]   ^ b1[i][j];
-                
-                delta1[i][j+1] = a2[i][sub_pi_2[j+1]] ^ b2[i][j+1];
-                delta2[i][j+1] = a1[i][sub_pi_1[j+1]] ^ b1[i][j+1];
-                
-                delta1[i][j+2] = a2[i][sub_pi_2[j+2]] ^ b2[i][j+2];
-                delta2[i][j+2] = a1[i][sub_pi_1[j+2]] ^ b1[i][j+2];
-                
-                delta1[i][j+3] = a2[i][sub_pi_2[j+3]] ^ b2[i][j+3];
-                delta2[i][j+3] = a1[i][sub_pi_1[j+3]] ^ b1[i][j+3];
-                
-                delta1[i][j+4] = a2[i][sub_pi_2[j+4]] ^ b2[i][j+4];
-                delta2[i][j+4] = a1[i][sub_pi_1[j+4]] ^ b1[i][j+4];
-                
-                delta1[i][j+5] = a2[i][sub_pi_2[j+5]] ^ b2[i][j+5];
-                delta2[i][j+5] = a1[i][sub_pi_1[j+5]] ^ b1[i][j+5];
-                
-                delta1[i][j+6] = a2[i][sub_pi_2[j+6]] ^ b2[i][j+6];
-                delta2[i][j+6] = a1[i][sub_pi_1[j+6]] ^ b1[i][j+6];
-                
-                delta1[i][j+7] = a2[i][sub_pi_2[j+7]] ^ b2[i][j+7];
-                delta2[i][j+7] = a1[i][sub_pi_1[j+7]] ^ b1[i][j+7];
+            delta1[i] = new TYPE_DATA[SIZE_PI];
+            a1[i] = new TYPE_DATA[SIZE_PI];
+            b1[i] = new TYPE_DATA[SIZE_PI];
+            delta2[i] = new TYPE_DATA[SIZE_PI];
+            a2[i] = new TYPE_DATA[SIZE_PI];
+            b2[i] = new TYPE_DATA[SIZE_PI];
+            prg.random_data_unaligned(a1[i], sizeof(TYPE_DATA)*SIZE_PI);
+            prg.random_data_unaligned(b1[i], sizeof(TYPE_DATA)*SIZE_PI);
+            prg.random_data_unaligned(a2[i], sizeof(TYPE_DATA)*SIZE_PI);
+            prg.random_data_unaligned(b2[i], sizeof(TYPE_DATA)*SIZE_PI);
+
+            for (TYPE_INDEX j = 0; j< SIZE_PI; j++)
+            {
+                delta1[i][j] = a2[i][sub_pi_1[j]] ^ b2[i][j];
+                delta2[i][j] = a1[i][sub_pi_2[j]] ^ b1[i][j];
             }
             
-            // Cleanup: handle remaining 0-7 elements
-            for (; j < SIZE_PI; j++) {
-                delta1[i][j] = a2[i][sub_pi_2[j]] ^ b2[i][j];
-                delta2[i][j] = a1[i][sub_pi_1[j]] ^ b1[i][j];
-            }
         }
         auto end_generate_ab_delta = time_now;
         exp_logs[13] = std::chrono::duration_cast<std::chrono::nanoseconds>(end_generate_ab_delta-start_generate_ab_delta).count();
@@ -757,97 +637,52 @@ int ClientDuetORAM::access(TYPE_ID blockID)
         memcpy(&evict_buffer_out[0][offset], &sub_pi_1[0], sizeof(TYPE_INDEX)*SIZE_PI);
         offset += sizeof(TYPE_INDEX)*SIZE_PI;
         
-        // Optimized delta1 copy with 4-way unrolling
-        i = 0;
-        limit = DATA_CHUNKS - 3;
-        for (; i < limit; i += 4) {
-            memcpy(&evict_buffer_out[0][offset], delta1[i],   chunk_size); offset += chunk_size;
-            memcpy(&evict_buffer_out[0][offset], delta1[i+1], chunk_size); offset += chunk_size;
-            memcpy(&evict_buffer_out[0][offset], delta1[i+2], chunk_size); offset += chunk_size;
-            memcpy(&evict_buffer_out[0][offset], delta1[i+3], chunk_size); offset += chunk_size;
-        }
-        for (; i < DATA_CHUNKS; i++) {
-            memcpy(&evict_buffer_out[0][offset], delta1[i], chunk_size);
-            offset += chunk_size;
-        }
-        
-        // Optimized a1 copy with 4-way unrolling
-        i = 0;
-        for (; i < limit; i += 4) {
-            memcpy(&evict_buffer_out[0][offset], a1[i],   chunk_size); offset += chunk_size;
-            memcpy(&evict_buffer_out[0][offset], a1[i+1], chunk_size); offset += chunk_size;
-            memcpy(&evict_buffer_out[0][offset], a1[i+2], chunk_size); offset += chunk_size;
-            memcpy(&evict_buffer_out[0][offset], a1[i+3], chunk_size); offset += chunk_size;
-        }
-        for (; i < DATA_CHUNKS; i++) {
-            memcpy(&evict_buffer_out[0][offset], a1[i], chunk_size);
-            offset += chunk_size;
-        }
-        
-        // Optimized b1 copy with 4-way unrolling
-        i = 0;
-        for (; i < limit; i += 4) {
-            memcpy(&evict_buffer_out[0][offset], b1[i],   chunk_size); offset += chunk_size;
-            memcpy(&evict_buffer_out[0][offset], b1[i+1], chunk_size); offset += chunk_size;
-            memcpy(&evict_buffer_out[0][offset], b1[i+2], chunk_size); offset += chunk_size;
-            memcpy(&evict_buffer_out[0][offset], b1[i+3], chunk_size); offset += chunk_size;
-        }
-        for (; i < DATA_CHUNKS; i++) {
-            memcpy(&evict_buffer_out[0][offset], b1[i], chunk_size);
-            offset += chunk_size;
+        for (TYPE_INDEX i = 0; i < DATA_CHUNKS; i++)
+        {
+            memcpy(&evict_buffer_out[0][offset], &delta1[i][0], sizeof(TYPE_DATA)*SIZE_PI);
+            offset += sizeof(TYPE_DATA)*SIZE_PI;
         }
 
-        // eviction information for server 1 (server2) - Optimized buffer packing
+        for (TYPE_INDEX i = 0; i < DATA_CHUNKS; i++)
+        {
+            memcpy(&evict_buffer_out[0][offset], &a1[i][0], sizeof(TYPE_DATA)*SIZE_PI);
+            offset += sizeof(TYPE_DATA)*SIZE_PI;
+        }
+        
+        for (TYPE_INDEX i = 0; i < DATA_CHUNKS; i++)
+        {
+            memcpy(&evict_buffer_out[0][offset], &b1[i][0], sizeof(TYPE_DATA)*SIZE_PI);
+            offset += sizeof(TYPE_DATA)*SIZE_PI;
+        }
+
+        // eviction information for server 0
         offset = 0;
         memcpy(&evict_buffer_out[1][offset], &evict_pathID, sizeof(TYPE_INDEX));
         offset += sizeof(TYPE_INDEX);
-        
+
         memcpy(&evict_buffer_out[1][offset], &seed_iv2, sizeof(block));
         offset += sizeof(block);
-        
+
         memcpy(&evict_buffer_out[1][offset], &sub_pi_2[0], sizeof(TYPE_INDEX)*SIZE_PI);
         offset += sizeof(TYPE_INDEX)*SIZE_PI;
-        
-        // Optimized delta2 copy with 4-way unrolling
-        i = 0;
-        for (; i < limit; i += 4) {
-            memcpy(&evict_buffer_out[1][offset], delta2[i],   chunk_size); offset += chunk_size;
-            memcpy(&evict_buffer_out[1][offset], delta2[i+1], chunk_size); offset += chunk_size;
-            memcpy(&evict_buffer_out[1][offset], delta2[i+2], chunk_size); offset += chunk_size;
-            memcpy(&evict_buffer_out[1][offset], delta2[i+3], chunk_size); offset += chunk_size;
-        }
-        for (; i < DATA_CHUNKS; i++) {
-            memcpy(&evict_buffer_out[1][offset], delta2[i], chunk_size);
-            offset += chunk_size;
-        }
-        
-        // Optimized a2 copy with 4-way unrolling
-        i = 0;
-        for (; i < limit; i += 4) {
-            memcpy(&evict_buffer_out[1][offset], a2[i],   chunk_size); offset += chunk_size;
-            memcpy(&evict_buffer_out[1][offset], a2[i+1], chunk_size); offset += chunk_size;
-            memcpy(&evict_buffer_out[1][offset], a2[i+2], chunk_size); offset += chunk_size;
-            memcpy(&evict_buffer_out[1][offset], a2[i+3], chunk_size); offset += chunk_size;
-        }
-        for (; i < DATA_CHUNKS; i++) {
-            memcpy(&evict_buffer_out[1][offset], a2[i], chunk_size);
-            offset += chunk_size;
-        }
-        
-        // Optimized b2 copy with 4-way unrolling
-        i = 0;
-        for (; i < limit; i += 4) {
-            memcpy(&evict_buffer_out[1][offset], b2[i],   chunk_size); offset += chunk_size;
-            memcpy(&evict_buffer_out[1][offset], b2[i+1], chunk_size); offset += chunk_size;
-            memcpy(&evict_buffer_out[1][offset], b2[i+2], chunk_size); offset += chunk_size;
-            memcpy(&evict_buffer_out[1][offset], b2[i+3], chunk_size); offset += chunk_size;
-        }
-        for (; i < DATA_CHUNKS; i++) {
-            memcpy(&evict_buffer_out[1][offset], b2[i], chunk_size);
-            offset += chunk_size;
+
+        for (TYPE_INDEX i = 0; i < DATA_CHUNKS; i++)
+        {
+            memcpy(&evict_buffer_out[1][offset], &delta2[i][0], sizeof(TYPE_DATA)*SIZE_PI);
+            offset += sizeof(TYPE_DATA)*SIZE_PI;
         }
 
+        for (TYPE_INDEX i = 0; i < DATA_CHUNKS; i++)
+        {
+            memcpy(&evict_buffer_out[1][offset], &a2[i][0], sizeof(TYPE_DATA)*SIZE_PI);
+            offset += sizeof(TYPE_DATA)*SIZE_PI;
+        }
 
+        for (TYPE_INDEX i = 0; i < DATA_CHUNKS; i++)
+        {
+            memcpy(&evict_buffer_out[1][offset], &b2[i][0], sizeof(TYPE_DATA)*SIZE_PI);
+            offset += sizeof(TYPE_DATA)*SIZE_PI;
+        }
         
         // 9.5 send eviction information to servers
         for (int i = 0; i < NUM_SERVERS; i++)
