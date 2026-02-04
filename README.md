@@ -94,6 +94,3 @@ If the code is found useful, we would be appreciated if our paper can be cited w
 ```
 
 ``` -->
-
-# Further Information
-For any inquiries, bugs, and assistance on building and running the code, please feel free to contact me at [lifengvbg@gmail.com](mailto:lifengvbg@gmail.com).
