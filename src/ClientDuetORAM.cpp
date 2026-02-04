@@ -588,7 +588,7 @@ int ClientDuetORAM::access(TYPE_ID blockID)
 
         // 等待服务器处理，避免客户端过快继续下一步（可调整时间）
         // 等待60秒，让服务器有足够时间处理完离线的置换矩阵接收和预处理
-        std::this_thread::sleep_for(std::chrono::milliseconds(60000));
+        std::this_thread::sleep_for(std::chrono::milliseconds(10000));
 
         // 9.3 generate shuffle
         eviction_start = time_now;
