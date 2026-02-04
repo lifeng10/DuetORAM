@@ -41,7 +41,7 @@ Run the binary executable file ```main```, which will ask for either Client or S
 
 **Note**: Please run three instances, two for servers and one for client.
 
-## ⚠️ Important Notice
+<!-- ## ⚠️ Important Notice
 
 **Bucket Overflow Probability**: In the implementation process, the probability of overflow is even more related to the randomness of the random number. We encountered a problem where overflow occurred because the write-back block was randomly assigned to a bad path, even though the bucket size and eviction frequency met the requirements.
 
@@ -85,7 +85,7 @@ git checkout 25373c33b649da9ee4a98291c3ba6c44887740c7
 This earlier version provides clearer code structure and is recommended for:
 - Understanding the algorithm implementation
 - Educational purposes
-- Code auditing and verification
+- Code auditing and verification -->
 
 
 <!-- ## Citing
