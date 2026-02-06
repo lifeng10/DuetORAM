@@ -19,7 +19,7 @@ private:
     TYPE_DATA** dot_product_vector;             // load bucket data from disk
     TYPE_DATA* sumBlock;                        // dot product result: computed block share to send to client
     //TYPE_DATA** dot_product_vector_in;          // xored vector that from another server
-    block mask_key;                             // load函数时，用于接收密钥，kt，用于xor操作
+    block mask_key;                     // mask key for dot product
 
     //thread
     int numThreads;
@@ -33,7 +33,7 @@ private:
     unsigned char* iv_buffer;            // receiving iv buffer
     unsigned char* key_buffer;          // receiving mask key buffer
     unsigned char* block_buffer_out;      // sending computed block share to client; copy sumBlock to block_buffer_out
-    unsigned char* block_buffer_in;       // receiving writen block share from client，block，读的次数和iv
+    unsigned char* block_buffer_in;       // receiving writen block share from client，block
     unsigned char* evict_buffer_in;
     zmq::socket_t* sendSocket;
     zmq::socket_t* recvSocket;
@@ -45,10 +45,10 @@ private:
     TYPE_DATA** a;
     TYPE_DATA** b;
 
-    block* fullPermutation;             //recoverd full permutation 从接收的密钥中恢复的完整的矩阵
-    block keytoPermutation;             //received key to generate full permutation 用于恢复完整矩阵的密钥
+    block* fullPermutation;             //recoverd full permutation
+    block keytoPermutation;             //received key to generate full permutation
     block* key_permutation_buffer_in;   //received information from client, key and punctured permutation
-    block* receivedPuncturedPermutation;//received punctured permutation 接收到的被穿刺的矩阵
+    block* receivedPuncturedPermutation;//received punctured permutation
 
     TYPE_DATA** fullPermutationExpansion;
     TYPE_DATA** puncturedPermutationExpansion;
@@ -86,7 +86,7 @@ public:
 
     // thread functions
     static void* thread_loadRetrievalData_func(void* args);
-    static void* thread_socket_func(void* args);        // 用于服务器之间的通信
+    static void* thread_socket_func(void* args);
 
     static int send(std::string ADDR, unsigned char* input, TYPE_INDEX inputSize, zmq::socket_t*);
     static int recv(std::string ADDR, unsigned char* output, TYPE_INDEX outputSize, zmq::socket_t*);
@@ -95,11 +95,10 @@ public:
     static int recv(std::string ADDR, unsigned char* output, TYPE_INDEX outputSize);
 
     // Auxiliary functions
-        // 把转置的结果存放在dst中
     void transpose_parallel(TYPE_DATA** src, TYPE_DATA** dst, int R, int C);
-        // 异或结果存放在第一个变量中
+
     void xor_vectors_optimized(TYPE_DATA** vec_a, TYPE_DATA** vec_b, int rows, int cols);
-        // 执行循环移位
+
     void efficient_rotate();
 
 

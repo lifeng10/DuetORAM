@@ -40,24 +40,24 @@ ServerDuetORAM::ServerDuetORAM(TYPE_INDEX serverNo, int selectedThreads) {
     // variables for retrieval
 
 
-    // receiving oram data buffer，接收一个bucket的ORAM Tree
+    // receiving oram data buffer
     bucket_buffer = new unsigned char[BUCKET_SIZE*sizeof(TYPE_DATA)*DATA_CHUNKS];
-    // receiving iv buffer，接收一个bucket的IV
+    // receiving iv buffer
     iv_buffer = new unsigned char[BUCKET_SIZE*sizeof(block)];
-    // receiving mask key buffer，接收mask key
+    // receiving mask key buffer
     key_buffer = new unsigned char[sizeof(block)];
 
-    // 接收查询向量
+
     this->select_buffer_in = new unsigned char[sizeof(TYPE_INDEX)+(H+1)*BUCKET_SIZE*sizeof(uint8_t)];
 
-    // 用于存储从磁盘加载的bucket数据, 参与检索运算的路经上的所有blocks
+
     this->dot_product_vector = new TYPE_DATA*[DATA_CHUNKS];
 	for (TYPE_INDEX k = 0 ; k < DATA_CHUNKS; k++)
 	{
 		this->dot_product_vector[k] = new TYPE_DATA[BUCKET_SIZE*(H+1)];
 	}
     
-    // 用于存储PIR计算的结果，用于返回给客户端
+
     sumBlock = new TYPE_DATA[DATA_CHUNKS];
 
 
@@ -71,23 +71,18 @@ ServerDuetORAM::ServerDuetORAM(TYPE_INDEX serverNo, int selectedThreads) {
     this->path_vector_out_for_identical_copy = new unsigned char[DATA_CHUNKS * SIZE_PI * sizeof(TYPE_DATA)];
 
     // variables for eviction
-    // 接收从客户端发送的密钥和矩阵信息
     this->key_permutation_buffer_in = new block[1 + (H+2)*BUCKET_SIZE * (H+2)*BUCKET_SIZE];
 
-    // 接收到的被穿刺的矩阵
     this-> receivedPuncturedPermutation = new block[(H+2)*BUCKET_SIZE * (H+2)*BUCKET_SIZE];
 
-    // 用于恢复完整矩阵
     this->fullPermutation = new block[(H+2)*BUCKET_SIZE * (H+2)*BUCKET_SIZE];
 
-    // 用于扩展完整的矩阵
     this->fullPermutationExpansion = new TYPE_DATA*[DATA_CHUNKS];
     for (TYPE_INDEX i = 0; i < DATA_CHUNKS; i++)
     {
         this->fullPermutationExpansion[i] = new TYPE_DATA[(H+2)*BUCKET_SIZE * (H+2)*BUCKET_SIZE];
     }
 
-    // 用于扩展穿刺的矩阵
     this->puncturedPermutationExpansion = new TYPE_DATA*[DATA_CHUNKS];
     for (TYPE_INDEX i = 0; i < DATA_CHUNKS; i++)
     {
@@ -309,7 +304,7 @@ int ServerDuetORAM::retrieve(zmq::socket_t& socket)
     int ret = 1;
 	
 	auto start = time_now;
-    // COMMUNICATION: 接收检索的信息
+    // COMMUNICATION: 
 	socket.recv(select_buffer_in,sizeof(TYPE_INDEX)+(H+1)*BUCKET_SIZE*sizeof(TYPE_DATA),0);
 	auto end = time_now;
 	cout<< "	[SendBlock] PathID and Logical Vector RECEIVED in " << std::chrono::duration_cast<std::chrono::nanoseconds>(end-start).count() << " ns" <<endl;
@@ -398,7 +393,7 @@ int ServerDuetORAM::retrieve(zmq::socket_t& socket)
 
     start = time_now;
     cout<< "	[SendBlock] Sending Block Share with ID-" << sumBlock[0] <<endl;
-    // COMMUNICATION: 返回检索结果
+    // COMMUNICATION:
     socket.send(block_buffer_out,sizeof(TYPE_DATA)*DATA_CHUNKS);
     end = time_now;
     cout<< "	[SendBlock] Block Share SENT in " << std::chrono::duration_cast<std::chrono::nanoseconds>(end-start).count() <<endl;
@@ -547,7 +542,7 @@ int ServerDuetORAM::recvBlock(zmq::socket_t& socket)
 {
     cout<< "	[recvBlock] Receiving Block Data..." <<endl;
 	auto start = time_now;
-    // COMMUNICATION: 接收更新的block信息
+    // COMMUNICATION:
 	socket.recv(block_buffer_in, sizeof(TYPE_DATA)*DATA_CHUNKS+sizeof(TYPE_INDEX)+sizeof(block), 0);
     auto end = time_now;
     TYPE_INDEX slotIdx;
@@ -604,7 +599,7 @@ int ServerDuetORAM::recvBlock(zmq::socket_t& socket)
 int ServerDuetORAM::recvInitialPermutation(zmq::socket_t& socket)
 {
     int ret = 1;
-    // COMMUNICATION: 接收初始的随机密钥和穿刺矩阵 (Offline Phase)
+    // COMMUNICATION:
     socket.recv(key_permutation_buffer_in, sizeof(block)*(1+ (H+2)*BUCKET_SIZE * (H+2)*BUCKET_SIZE),0);
     socket.send((unsigned char*)CMD_SUCCESS, sizeof(CMD_SUCCESS), 0);
     cout<< "	[recvInitialPermutation] ACK is SENT!" <<endl;
@@ -660,7 +655,7 @@ int ServerDuetORAM::evict(zmq::socket_t& socket)
 
     cout<< "	[evict] Receiving Evict Information..." <<endl;;
 	auto start = time_now;
-    // COMMUNICATION: 接收驱逐的信息
+    // COMMUNICATION:
     socket.recv(evict_buffer_in, sizeof(TYPE_INDEX) + sizeof(block) + sizeof(TYPE_INDEX)*SIZE_PI + 3 * sizeof(TYPE_DATA)*DATA_CHUNKS*SIZE_PI,0);
     auto end = time_now;
     cout<< "	[evict] RECEIVED! in " << std::chrono::duration_cast<std::chrono::nanoseconds>(end-start).count() <<endl;
@@ -759,7 +754,6 @@ int ServerDuetORAM::evict(zmq::socket_t& socket)
     int step = ceil((double)DATA_CHUNKS/(double)numThreads);
     int endIdx;
 
-        // evict_vector就是驱逐路径上的元素
     THREAD_LOADDATA loadData_args[numThreads];
     TYPE_DATA** evict_vector = new TYPE_DATA*[DATA_CHUNKS];
     for (TYPE_INDEX k = 0; k < DATA_CHUNKS; k++)
@@ -813,8 +807,7 @@ int ServerDuetORAM::evict(zmq::socket_t& socket)
         }
         fclose(file_iv);
     }
-    
-    // 3. 根据iv计算密钥流 //NOTE:注意，这里生成的密钥流矩阵和元素矩阵是互为转置的 (optimized with AES-NI hardware acceleration)
+
     TYPE_DATA** keystream = new TYPE_DATA* [BUCKET_SIZE*(H+2)];
     for (int i = 0 ; i < BUCKET_SIZE*(H+2); i++)
     {
@@ -847,7 +840,7 @@ int ServerDuetORAM::evict(zmq::socket_t& socket)
         }
     }
 
-    // 4. 计算用于shuffle的路径元素。服务器1选择r1,服务器2选择m+r1
+
     TYPE_DATA** evict_vector_for_shuffle = new TYPE_DATA*[DATA_CHUNKS];
     for(TYPE_INDEX i = 0; i < DATA_CHUNKS; i++)
     {
@@ -1232,15 +1225,15 @@ int ServerDuetORAM::evict(zmq::socket_t& socket)
 
     
     
-    // 8. 服务器之间交换mask后的数据，得到相同的copy
+
     block* list_iv = new block[SIZE_PI];
     prg.reseed(&this->seed_iv);
     prg.random_block(list_iv, SIZE_PI);
     cout << "    [evict] Server-" << this->serverNo << " generated " << SIZE_PI << " new IVs from seed: " << this->seed_iv << endl;
     cout << "    [evict] First new IV: " << list_iv[0] << ", Last new IV: " << list_iv[SIZE_PI-1] << endl;
 
-    // 8.1 dot_product_vector_xored用于存放服务器之间交互的信息，即异或后的路径信息
-    TYPE_DATA** dot_product_vector_xored_in = new TYPE_DATA*[DATA_CHUNKS];      // 存放从其他服务器发送的经过XOR的路径信息
+
+    TYPE_DATA** dot_product_vector_xored_in = new TYPE_DATA*[DATA_CHUNKS]; 
     TYPE_DATA** dot_product_vector_xored = new TYPE_DATA*[DATA_CHUNKS];
     for (TYPE_INDEX i = 0; i < DATA_CHUNKS; i++)
     {
@@ -1250,7 +1243,7 @@ int ServerDuetORAM::evict(zmq::socket_t& socket)
         memset(dot_product_vector_xored_in[i],0,sizeof(TYPE_DATA)*SIZE_PI);
     }
 
-    // 8.2 计算密钥流 (optimized with AES-NI hardware acceleration)
+
     TYPE_DATA ** key_stream_for_exchange = new TYPE_DATA*[SIZE_PI];
     for (TYPE_INDEX i = 0; i < SIZE_PI; i++)
     {
@@ -1284,7 +1277,7 @@ int ServerDuetORAM::evict(zmq::socket_t& socket)
         }
     }
     
-    // 8.3 计算用于交换的信息 (optimized with OpenMP parallelization)
+
     #pragma omp parallel for schedule(static)
     for (TYPE_INDEX i = 0; i < DATA_CHUNKS; i++)
     {
@@ -1403,10 +1396,9 @@ int ServerDuetORAM::evict(zmq::socket_t& socket)
         fclose(file_out_iv);
     }
 
-    // 写叶子节点，叶子节点的数据仍然在自己上第H个上，即不像前面的数据，需要把父节点的数据移动到孩子节点的兄弟节点上
+
     num_bucket = fullPathIdx[H];
     path_out_block = rootPath + to_string(this->serverNo) + "/" + to_string(num_bucket);
-    // cout << "    [evict] Leaf (layer " << H << "): Writing to bucket " << num_bucket << endl;
     path_out_iv = rootPath + "client_iv" + to_string(this->serverNo+1) + "/" + to_string(num_bucket);
     if((file_out_block = fopen(path_out_block.c_str(),"wb+")) == NULL)
     {
@@ -1427,7 +1419,6 @@ int ServerDuetORAM::evict(zmq::socket_t& socket)
     fwrite(&list_iv[H*BUCKET_SIZE], 1, sizeof(block)*BUCKET_SIZE, file_out_iv);
     fclose(file_out_iv);
 
-    // 写根节点，根节点是置换的最后一个节点的数据（第H+1层）
     num_bucket = fullPathIdx[0];
     path_out_block = rootPath + to_string(this->serverNo) + "/" + to_string(num_bucket);
     cout << "    [evict] Root (layer 0): Writing to bucket " << num_bucket << " using shuffle layer " << (H+1) << endl;
@@ -1546,8 +1537,7 @@ void ServerDuetORAM::transpose_parallel(TYPE_DATA** __restrict__ src,
 
 void ServerDuetORAM::xor_vectors_optimized(TYPE_DATA** vec_a, TYPE_DATA** vec_b, int rows, int cols)
 {
-    // 1. OpenMP 并行：将不同的行分配给不同的 CPU 核心
-    // schedule(static) 对于这种负载均衡的任务最高效
+
     #pragma omp parallel for schedule(static)
     for (int i = 0; i < rows; i++) {
         
@@ -1556,77 +1546,30 @@ void ServerDuetORAM::xor_vectors_optimized(TYPE_DATA** vec_a, TYPE_DATA** vec_b,
         
         int j = 0;
 
-        // 2. AVX2 核心优化部分
-        // 每次处理 4 个 unsigned long long (4 * 64bit = 256bit)
-        // 只要剩余元素 >= 4 个，就用 SIMD 指令轰炸
         for (; j <= cols - 4; j += 4) {
-            
-            // Step A: 加载数据 (使用 loadu 处理非对齐内存，防止 new 出来的地址不是32字节对齐)
-            // 将 4 个 unsigned long long 当作一个整体加载到寄存器
+
             __m256i va = _mm256_loadu_si256((__m256i*)&row_a[j]);
             __m256i vb = _mm256_loadu_si256((__m256i*)&row_b[j]);
 
-            // Step B: 执行并行异或
             __m256i res = _mm256_xor_si256(va, vb);
 
-            // Step C: 存回结果
             _mm256_storeu_si256((__m256i*)&row_a[j], res);
         }
 
-        // 3. 处理尾巴 (Tail Case)
-        // 如果列数不是 4 的倍数，剩下这 1~3 个元素用普通方法处理
         for (; j < cols; j++) {
             row_a[j] = row_a[j] ^ row_b[j];
         }
     }
 }
 
-// void ServerDuetORAM::efficient_rotate()
-// {
-//     // 1. 定义别名，消除重复逻辑
-//     // 如果是 Server0: arr1 是 received, arr2 是 full
-//     // 如果是 Server1: arr1 是 full,     arr2 是 received
-//     auto* arr1 = (this->serverNo == 0) ? receivedPuncturedPermutation : fullPermutation;
-//     auto* arr2 = (this->serverNo == 0) ? fullPermutation : receivedPuncturedPermutation;
-
-//     // 2. 并行处理第一个数组 (基于 circularShift_1)
-//     // 使用 static 调度，因为每次旋转的工作量是相同的（假设 SIZE_PI 固定）
-//     #pragma omp parallel for schedule(static)
-//     for (int i = 0; i < SIZE_PI; i++)
-//     {
-//         // 算出当前行的起始和结束指针
-//         auto start = arr1 + i * SIZE_PI;
-//         auto end   = start + SIZE_PI;
-//         auto mid   = end - circularShift_1[i]; // 右移 k 位 = rotate(start, end-k, end)
-        
-//         std::rotate(start, mid, end);
-//     }
-
-//     // 3. 并行处理第二个数组 (基于 circularShift_2)
-//     #pragma omp parallel for schedule(static)
-//     for (int j = 0; j < SIZE_PI; j++)
-//     {
-//         auto start = arr2 + j * SIZE_PI;
-//         auto end   = start + SIZE_PI;
-//         auto mid   = end - circularShift_2[j];
-        
-//         std::rotate(start, mid, end);
-//     }
-// }
-
 void ServerDuetORAM::efficient_rotate()
 {
-    // 1. 定义别名，消除重复逻辑
-    // 如果是 Server0: arr1 是 puncturedPermutationExpansion, arr2 是 fullPermutationExpansion
-    // 如果是 Server1: arr1 是 fullPermutationExpansion,     arr2 是 puncturedPermutationExpansion
     TYPE_DATA** arr1 = (this->serverNo == 0) ? puncturedPermutationExpansion : fullPermutationExpansion;
     TYPE_DATA** arr2 = (this->serverNo == 0) ? fullPermutationExpansion : puncturedPermutationExpansion;
 
     const size_t ELEMENT_SIZE = sizeof(TYPE_DATA);
     const bool use_avx2 = CPUFeatures::has_avx2();
-    
-    // 2. 并行处理第一个数组 (基于 circularShift_1)
-    // 优化: 使用 memcpy/memmove 替代 std::rotate (8-10× faster under -O0)
+
     #pragma omp parallel num_threads(numThreads)
     {
         // Thread-local temp buffer to avoid contention
@@ -1688,8 +1631,7 @@ void ServerDuetORAM::efficient_rotate()
                 }
             }
         }
-        
-        // 3. 并行处理第二个数组 (基于 circularShift_2)
+
         #pragma omp for collapse(2) schedule(static)
         for (int k = 0; k < DATA_CHUNKS; k++)
         {

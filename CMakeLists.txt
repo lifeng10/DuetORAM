@@ -24,10 +24,10 @@ add_executable(main ${SRC})
 target_link_libraries(main 
     PRIVATE 
     zmq 
-    emp-tool            # 必须链接 emp-tool 自身
-    OpenSSL::SSL        # 解决 EVP_... 报错
-    OpenSSL::Crypto     # 解决 EVP_... 报错
-    pthread             # 解决线程报错
-    ${Boost_LIBRARIES}  # 链接 Boost
+    emp-tool            
+    OpenSSL::SSL        
+    OpenSSL::Crypto     
+    pthread            
+    ${Boost_LIBRARIES}  
     OpenMP::OpenMP_CXX
 )

@@ -46,12 +46,12 @@ int DuetORAM::build(TYPE_POS_MAP* pos_map, TYPE_DATA** metaData, block k1, block
     //random permutation using built-in function
     std::random_shuffle ( blockIDs.begin(), blockIDs.end() );
 
-    // 初始化前一半个空节点
+
     for (TYPE_INDEX i = 0; i < NUM_NODES/2; i++)
     {
         memset(bucket_iv1,0,sizeof(block)*BUCKET_SIZE);
         memset(bucket_iv2,0,sizeof(block)*BUCKET_SIZE);
-        // 把原始节点存放在本地
+
         file_out = NULL;
         path = clientDataDir + to_string(i);
         if((file_out = fopen(path.c_str(),"wb+")) == NULL)
@@ -65,7 +65,7 @@ int DuetORAM::build(TYPE_POS_MAP* pos_map, TYPE_DATA** metaData, block k1, block
         }
         fclose(file_out);
 
-        // 把对应bucket中的每个block的iv1存放在本地
+
         file_iv1_out = NULL;                                     // for storing iv1
         path_iv1 = clientDataDir_iv1 + to_string(i);              // for storing iv1
         if ((file_iv1_out = fopen(path_iv1.c_str(), "wb+")) == NULL)
@@ -78,7 +78,7 @@ int DuetORAM::build(TYPE_POS_MAP* pos_map, TYPE_DATA** metaData, block k1, block
         fclose(file_iv1_out);
 
 
-        // 把对应bucket中的每个block的iv2存放在本地
+
         file_iv2_out = NULL;                                     // for storing iv2
         path_iv2 = clientDataDir_iv2 + to_string(i);              // for storing iv2
         if ((file_iv2_out = fopen(path_iv2.c_str(), "wb+")) == NULL)
@@ -95,8 +95,6 @@ int DuetORAM::build(TYPE_POS_MAP* pos_map, TYPE_DATA** metaData, block k1, block
 
 
     //generate random blocks in leaf-buckets
-    //叶子节点第一行要初始化，是因为每次数据都写在第一行了
-    //metaData是记录了block存放在哪个bucket的哪个位置
     TYPE_INDEX iter = 0;
     for (TYPE_INDEX i = NUM_NODES/2; i < NUM_NODES; i++)
     {
@@ -165,7 +163,7 @@ int DuetORAM::build(TYPE_POS_MAP* pos_map, TYPE_DATA** metaData, block k1, block
     boost::progress_display show_progress(NUM_NODES);
 
 
-    //初始化每个服务器的bucket
+
     TYPE_DATA*** bucketShares = new TYPE_DATA**[NUM_SERVERS];
     for(TYPE_INDEX k = 0; k < NUM_SERVERS; k++)
     {
@@ -176,7 +174,7 @@ int DuetORAM::build(TYPE_POS_MAP* pos_map, TYPE_DATA** metaData, block k1, block
         }
     }
 
-    TYPE_DATA shares[DATA_CHUNKS][NUM_SERVERS]; //一个值的shares, now the value is identical for two servers
+    TYPE_DATA shares[DATA_CHUNKS][NUM_SERVERS];
     FILE* file_in = NULL;
     file_out = NULL;
     FILE* file_iv1_in = NULL;
@@ -202,7 +200,7 @@ int DuetORAM::build(TYPE_POS_MAP* pos_map, TYPE_DATA** metaData, block k1, block
     auto start = time_now;
     auto end = time_now;
 
-    // 计算shares并存储在各个服务器对应的目录下
+
     for (TYPE_INDEX i = 0; i < NUM_NODES; i++)
     {
         // read iv, and compute keystream
@@ -347,17 +345,12 @@ int DuetORAM::getSharedVector(uint8_t* logicalVector, uint8_t** sharedVector)
 TYPE_INDEX DuetORAM::getEvictLeafID(TYPE_INDEX n_evict)
 {
     TYPE_INDEX reversed_val = 0;
-    // 1. 手动进行比特反转 (Bit Reversal)
-    // 比如 H=3, n_evict=001(1) -> 变成 100(4)
     TYPE_ID temp = n_evict;
     for (int i = 0; i < H; ++i) {
-        reversed_val <<= 1;      // 结果左移腾出位置
-        reversed_val |= (temp & 1); // 取 temp 的最低位填入
-        temp >>= 1;              // temp 右移处理下一位
+        reversed_val <<= 1;
+        reversed_val |= (temp & 1);
+        temp >>= 1; 
     }
-
-    // 2. 计算 Root=0 下的叶子节点全局 ID
-    // 偏移量：2^H - 1
     return ((1 << H) - 1) + reversed_val;
 }
 
