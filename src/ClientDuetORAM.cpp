@@ -4,7 +4,7 @@
 #include <chrono>
 
 unsigned long int ClientDuetORAM::exp_logs[19];
-unsigned long int ClientDuetORAM::thread_max = 0; //用于记录执行线程的时间。因为有多个线程，只记录耗时最长的线程所用的时间
+unsigned long int ClientDuetORAM::thread_max = 0;
 char ClientDuetORAM::timestamp[16];
 
 ClientDuetORAM::ClientDuetORAM() {
@@ -16,38 +16,32 @@ ClientDuetORAM::ClientDuetORAM() {
         this->metaData[i] = new TYPE_ID[BUCKET_SIZE];
     }
 
-    // 生成的查询向量
     this->sharedVector = new uint8_t*[NUM_SERVERS];     // vector for retrieval, XOR {0,1}
 	for(int i = 0; i < NUM_SERVERS; i++)
 	{
 		this->sharedVector[i] = new uint8_t[(H+1)*BUCKET_SIZE];
 	}
 
-    // 收两个服务器返回的检索结果
     retrievedShare = new TYPE_DATA*[NUM_SERVERS];       // retrieval result: block shares from servers
 	for(int k = 0 ; k < NUM_SERVERS; k++)
     {
         retrievedShare[k] = new TYPE_DATA[DATA_CHUNKS];
     }
 
-    // 恢复查询block结果
     recoveredBlock = new TYPE_DATA[DATA_CHUNKS];
 
-    // 发送查询向量给server
     this->vector_buffer_out = new unsigned char*[NUM_SERVERS];
     for (TYPE_INDEX i = 0; i < NUM_SERVERS; i++)
     {
         this->vector_buffer_out[i] = new unsigned char[sizeof(TYPE_INDEX)+(H+1)*BUCKET_SIZE*sizeof(uint8_t)]; 
     }
 
-    // 接收查询结果，2个服务器，DATA_CHUNKS个数据
     blocks_buffer_in = new unsigned char*[NUM_SERVERS];
     for(int i = 0; i < NUM_SERVERS ; i++)
     {
         blocks_buffer_in[i] = new unsigned char[sizeof(TYPE_DATA)*DATA_CHUNKS];
     }
 
-    // 检索完后写回block，包括读的次数和iv
     this->block_buffer_out = new unsigned char*[NUM_SERVERS];
     for (int i = 0 ; i < NUM_SERVERS; i ++)
     {
@@ -56,34 +50,30 @@ ClientDuetORAM::ClientDuetORAM() {
     }
 
     // eviction variables
-    // 初始化随机向量
     this->SIZE_PI = (H+2)*BUCKET_SIZE;
     this->u1 = new TYPE_INDEX[SIZE_PI];
     this->u2 = new TYPE_INDEX[SIZE_PI];
 
-    // 初始化置换矩阵
     this->permutationAa = new block[SIZE_PI * SIZE_PI];
     this->permutationBb = new block[SIZE_PI * SIZE_PI];
 
-    // 初始化子置换
     this->sub_pi_1 = new TYPE_INDEX[SIZE_PI];
     this->sub_pi_2 = new TYPE_INDEX[SIZE_PI];
 
-    // 初始化循环移位
     this->circularShift_1 = new TYPE_INDEX[SIZE_PI];
     this->circularShift_2 = new TYPE_INDEX[SIZE_PI];
 
-    // 初始化置换密钥缓冲区，存储发送给服务器的穿刺矩阵和密钥
+
     this->key_permutation_buffer_out = new block*[NUM_SERVERS];
     for (int i = 0 ; i < NUM_SERVERS; i++)
     {
         this->key_permutation_buffer_out[i] = new block[SIZE_PI * SIZE_PI + 1]; // +1 for key
     }
 
-    // 初始化置换索引
+
     this->evict_pi = new TYPE_INDEX[SIZE_PI];
 
-    // 发送驱逐的信息给服务器：驱逐路径，子置换，2个循环移位向量，生成iv的种子
+
     this->evict_buffer_out = new unsigned char*[NUM_SERVERS];
     for (int i = 0; i < NUM_SERVERS; i++)
     {
@@ -421,12 +411,12 @@ int ClientDuetORAM::access(TYPE_ID blockID)
     {
         memcpy(&vector_buffer_out[i][0], &pathID, sizeof(pathID));
         memcpy(&vector_buffer_out[i][sizeof(pathID)], &this->sharedVector[i][0], (H+1)*BUCKET_SIZE*sizeof(uint8_t));
-        // COMMUNICATION: 发送查询请求
+        // COMMUNICATION:
         thread_args[i] = struct_socket(SERVER_ADDR[i]+ ":" + std::to_string(SERVER_PORT+i*NUM_SERVERS+i), vector_buffer_out[i], sizeof(pathID)+(H+1)*BUCKET_SIZE*sizeof(uint8_t), blocks_buffer_in[i], sizeof(TYPE_DATA)*DATA_CHUNKS, CMD_REQUEST_BLOCK, NULL);
         pthread_create(&thread_sockets[i], NULL, &ClientDuetORAM::thread_socket_func, (void*)&thread_args[i]);
     }
     
-    // 初始化结果
+
     memset(recoveredBlock, 0, sizeof(TYPE_DATA)*DATA_CHUNKS);
 
     for (int i = 0; i < NUM_SERVERS; i++)
@@ -483,7 +473,7 @@ int ClientDuetORAM::access(TYPE_ID blockID)
     start = time_now;
     TYPE_INDEX fullPathIdx[H+1];
     ORAM.getFullPathIdx(fullPathIdx,pathID);
-    this->metaData[fullPathIdx[pos_map[blockID].pathIdx / BUCKET_SIZE ]][pos_map[blockID].pathIdx % BUCKET_SIZE] = 0; //对应的block位置清空
+    this->metaData[fullPathIdx[pos_map[blockID].pathIdx / BUCKET_SIZE ]][pos_map[blockID].pathIdx % BUCKET_SIZE] = 0; // Clear the corresponding block position
 
     // assign new random position
     pos_map[blockID].pathID = Utils::RandBound(N_leaf)+(N_leaf-1);
@@ -525,7 +515,7 @@ int ClientDuetORAM::access(TYPE_ID blockID)
     start = time_now;
     for(TYPE_INDEX k = 0; k < NUM_SERVERS; k++) 
     {   
-        // COMMUNICATION: 发送更新的block信息
+        // COMMUNICATION:
         thread_args[k] = struct_socket(SERVER_ADDR[k]+ ":" + std::to_string(SERVER_PORT+k*NUM_SERVERS+k), block_buffer_out[k], sizeof(TYPE_DATA)*DATA_CHUNKS+sizeof(TYPE_INDEX)+sizeof(block), NULL, 0, CMD_SEND_BLOCK,NULL);
 
 		pthread_create(&thread_sockets[k], NULL, &ClientDuetORAM::thread_socket_func, (void*)&thread_args[k]);
@@ -580,14 +570,12 @@ int ClientDuetORAM::access(TYPE_ID blockID)
         memcpy(&key_permutation_buffer_out[0][1], &permutationAa[0], sizeof(block)*(H+2)*BUCKET_SIZE*(H+2)*BUCKET_SIZE);
         memcpy(&key_permutation_buffer_out[1][0], &this->key3, sizeof(block));  //NOTE: key3 with permutationBb
         memcpy(&key_permutation_buffer_out[1][1], &permutationBb[0], sizeof(block)*(H+2)*BUCKET_SIZE*(H+2)*BUCKET_SIZE);
-        // COMMUNICATION: 离线发送穿刺矩阵和密钥
+        // COMMUNICATION:
         sendInitialPermutation(this->key_permutation_buffer_out);
         end = time_now;
         exp_logs[9] = std::chrono::duration_cast<std::chrono::nanoseconds>(end-start).count();
         cout << "   [sendInitialPermutation] SENDING INITIALIZE PERMUTATION MATRICES FINISHED!" <<endl; 
 
-        // 等待服务器处理，避免客户端过快继续下一步（可调整时间）
-        // 等待60秒，让服务器有足够时间处理完离线的置换矩阵接收和预处理
         std::this_thread::sleep_for(std::chrono::milliseconds(10000));
 
         // 9.3 generate shuffle
@@ -646,7 +634,7 @@ int ClientDuetORAM::access(TYPE_ID blockID)
         start = time_now;
         for (int i = 0; i < NUM_SERVERS; i++)
         {
-            // COMMUNICATION: 发送驱逐信息
+            // COMMUNICATION:
             thread_args[i] = struct_socket(SERVER_ADDR[i] + ":" + std::to_string(SERVER_PORT+i*NUM_SERVERS+i), evict_buffer_out[i], sizeof(TYPE_INDEX) + sizeof(block) + 3 * sizeof(TYPE_INDEX) * SIZE_PI, NULL, 0, CMD_SEND_EVICT, NULL);
             pthread_create(&thread_sockets[i], NULL, &ClientDuetORAM::thread_socket_func, (void*)&thread_args[i]);
         }

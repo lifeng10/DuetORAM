@@ -11,7 +11,7 @@
 #include <bitset>
 #include <algorithm>
 #include <omp.h>
-#include <immintrin.h> // 必须包含：AVX2指令集
+#include <immintrin.h>
 #include <assert.h>
 #include <boost/progress.hpp>
 #include <map>

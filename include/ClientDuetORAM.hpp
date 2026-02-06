@@ -19,10 +19,10 @@ private:
 
     //variables for retrieval operation
     TYPE_INDEX numRead;
-    uint8_t** sharedVector;             // 客户端给两个服务器生成的查询向量，share，2  *  Z*(H+1)
+    uint8_t** sharedVector;       
 
-    TYPE_DATA** retrievedShare;             // 客户端用于接收两个服务器返回的检索结果，2  *  DATA_CHUNKS
-    TYPE_DATA* recoveredBlock;              // 客户端恢复查询block，DATA_CHUNKS个
+    TYPE_DATA** retrievedShare;           
+    TYPE_DATA* recoveredBlock;       
 
     unsigned char** vector_buffer_out;      //sending retrieval vector buffer, path ID & sharedVector
     unsigned char** block_buffer_out;       // sending writen block (accessed block) buffer to servers

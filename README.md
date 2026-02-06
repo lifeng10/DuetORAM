@@ -34,7 +34,7 @@ cd build
 cmake ..
 make
 ```
-,which produces the binary executable file named ```main``` in ```build/```.
+which produces the binary executable file named ```main``` in ```build/```.
 
 
 ## Usage
