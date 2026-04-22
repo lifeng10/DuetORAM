@@ -1,8 +1,15 @@
-# ORAM
+# DORAM
 
 Two branches, main and Online-version 
 
 Main for DuetORAM with preprocess, and Online-version for DuetORAM without preprocess
+
+## Comparison Scheme
+[S<sup>3</sup>ORAM](https://github.com/thanghoang/S3ORAM)
+Available at: <https://github.com/thanghoang/S3ORAM>
+
+[DUORAM](https://git-crysp.uwaterloo.ca/avadapal/duoram)
+Available at: <https://git-crysp.uwaterloo.ca/avadapal/duoram>
 
 ## Required Libraries
 [ZeroMQ](https://zeromq.org/download/)

@@ -224,6 +224,7 @@ int ServerDuetORAM::start() {
                 generatePermutationOffline(keytoPermutation, fullPermutation);
                 end_generatePermutationOffline = time_now;
                 server_logs[25] = std::chrono::duration_cast<std::chrono::nanoseconds>(end_generatePermutationOffline-start_generatePermutationOffline).count();
+                cout << "[Server] Generated Full Permutation Offline in " << server_logs[25] << " ns" << endl;
                 cout << "=================================================================" << endl;
                 cout<< "[Server] Full Permutation is Recovered!" <<endl;
                 cout << "=================================================================" << endl;

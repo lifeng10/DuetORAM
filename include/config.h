@@ -41,8 +41,8 @@ enum Operation {READ, WRITE};
 //====================================================================
 
 //=== PARAMETERS ============================================================
-#define BLOCK_SIZE 64
-#define HEIGHT 10
+#define BLOCK_SIZE 2048
+#define HEIGHT 7
 #define BUCKET_SIZE 333
 #define EVICT_RATE 280
 const int H = HEIGHT; 
