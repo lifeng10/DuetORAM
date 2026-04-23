@@ -576,8 +576,8 @@ int ClientDuetORAM::access(TYPE_ID blockID)
         exp_logs[9] = std::chrono::duration_cast<std::chrono::nanoseconds>(end-start).count();
         cout << "   [sendInitialPermutation] SENDING INITIALIZE PERMUTATION MATRICES FINISHED!" <<endl; 
 
-        cout << "   [ClientDuetORAM] Sleeping for 10 seconds..." << endl;
-        std::this_thread::sleep_for(std::chrono::milliseconds(100000));
+        cout << "   [ClientDuetORAM] Sleeping for 2 seconds..." << endl;
+        std::this_thread::sleep_for(std::chrono::milliseconds(2000));
 
         // 9.3 generate shuffle
         eviction_start = time_now;

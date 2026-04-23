@@ -224,7 +224,7 @@ int ServerDuetORAM::start() {
                 generatePermutationOffline(keytoPermutation, fullPermutation);
                 end_generatePermutationOffline = time_now;
                 server_logs[25] = std::chrono::duration_cast<std::chrono::nanoseconds>(end_generatePermutationOffline-start_generatePermutationOffline).count();
-                cout << "[Server] Generated Full Permutation Offline in " << server_logs[25] << " ns" << endl;
+                // cout << "[Server] Generated Full Permutation Offline in " << server_logs[25] << " ns" << endl;
                 cout << "=================================================================" << endl;
                 cout<< "[Server] Full Permutation is Recovered!" <<endl;
                 cout << "=================================================================" << endl;
@@ -637,29 +637,29 @@ int ServerDuetORAM::generatePermutationOffline(const block& keytoPermutation, bl
     prg.reseed(&keytoPermutation);
     prg.random_block(fullPermutation, (H+2)*BUCKET_SIZE * (H+2)*BUCKET_SIZE);
 
-    #pragma omp parallel
-    {
-        PRG prg_local;
-        TYPE_DATA rand_data[DATA_CHUNKS];
+    // #pragma omp parallel
+    // {
+    //     PRG prg_local;
+    //     TYPE_DATA rand_data[DATA_CHUNKS];
         
-        #pragma omp for schedule(static)
-        for (int i = 0; i < SIZE_PI * SIZE_PI; i++)
-        {
-            prg_local.reseed(&fullPermutation[i]);
-            prg_local.random_data_unaligned(rand_data, sizeof(TYPE_DATA)*DATA_CHUNKS);
-            for (int j = 0; j < DATA_CHUNKS; j++)
-            {
-                fullPermutationExpansion[j][i] = rand_data[j];
-            }
+    //     #pragma omp for schedule(static)
+    //     for (int i = 0; i < SIZE_PI * SIZE_PI; i++)
+    //     {
+    //         prg_local.reseed(&fullPermutation[i]);
+    //         prg_local.random_data_unaligned(rand_data, sizeof(TYPE_DATA)*DATA_CHUNKS);
+    //         for (int j = 0; j < DATA_CHUNKS; j++)
+    //         {
+    //             fullPermutationExpansion[j][i] = rand_data[j];
+    //         }
 
-            prg_local.reseed(&receivedPuncturedPermutation[i]);
-            prg_local.random_data_unaligned(rand_data, sizeof(TYPE_DATA)*DATA_CHUNKS);
-            for (int j = 0; j < DATA_CHUNKS; j++)
-            {
-                puncturedPermutationExpansion[j][i] = rand_data[j];
-            }
-        }
-    }
+    //         prg_local.reseed(&receivedPuncturedPermutation[i]);
+    //         prg_local.random_data_unaligned(rand_data, sizeof(TYPE_DATA)*DATA_CHUNKS);
+    //         for (int j = 0; j < DATA_CHUNKS; j++)
+    //         {
+    //             puncturedPermutationExpansion[j][i] = rand_data[j];
+    //         }
+    //     }
+    // }
 
     return 0;
 }
@@ -850,327 +850,173 @@ int ServerDuetORAM::evict(zmq::socket_t& socket)
         memset(this->delta[i], 0, sizeof(TYPE_DATA)*SIZE_PI);
     }
 
-    // 6.1 compute a (ULTRA-OPTIMIZED v3: AVX2 4-way + prefetching)
-    // Strided access pattern: a[j] = XOR(expansion[j + i*SIZE_PI] for all i)
+    // ============================================================
+    // 6.1 compute a
+    // Outer loop: column j → accesses fullPermutation[j + i*SIZE_PI]
+    // Access pattern: stride SIZE_PI (column-major), each thread owns its j.
+    // Stack-only temporaries → zero heap pressure inside the parallel region.
+    // ============================================================
     start = time_now;
+
     #pragma omp parallel for schedule(static)
-    for (TYPE_INDEX k = 0; k < DATA_CHUNKS; k++)
+    for (TYPE_INDEX j = 0; j < SIZE_PI; j++)
     {
-        TYPE_DATA* __restrict__ expansion_row = this->fullPermutationExpansion[k];
-        TYPE_DATA* __restrict__ a_row = this->a[k];
-        
-        for (TYPE_INDEX j = 0; j < SIZE_PI; j++)
+        PRG prg_a;
+        TYPE_DATA result[DATA_CHUNKS] = {0};  // thread-local accumulator
+        TYPE_DATA expanded[DATA_CHUNKS];       // single-block scratch buffer
+
+        for (TYPE_INDEX i = 0; i < SIZE_PI; i++)
         {
-            if (CPUFeatures::has_avx2()) {
-                __m256i acc1 = _mm256_setzero_si256();
-                __m256i acc2 = _mm256_setzero_si256();
-                __m256i acc3 = _mm256_setzero_si256();
-                __m256i acc4 = _mm256_setzero_si256();
-                
-                TYPE_INDEX i = 0;
-                // 4-way parallel accumulation (16×64-bit per iteration)
-                // Each accumulator breaks data dependencies for maximum ILP under -O0
-                for (; i + 15 < SIZE_PI; i += 16) {
-#ifdef ENABLE_PREFETCH
-                    // Optional prefetching (disabled by default - hardware prefetcher is often better)
-                    // Prefetch 32 iterations ahead for strided access
-                    if (i + 47 < SIZE_PI) {
-                        _mm_prefetch((const char*)&expansion_row[j + (i+32)*SIZE_PI], _MM_HINT_T0);
-                        _mm_prefetch((const char*)&expansion_row[j + (i+40)*SIZE_PI], _MM_HINT_T0);
-                    }
-#endif
-                    
-                    // Manual gather for strided access (no AVX2 gather for XOR)
-                    __m256i v1 = _mm256_set_epi64x(
-                        expansion_row[j + (i+3)*SIZE_PI],
-                        expansion_row[j + (i+2)*SIZE_PI],
-                        expansion_row[j + (i+1)*SIZE_PI],
-                        expansion_row[j + i*SIZE_PI]
-                    );
-                    __m256i v2 = _mm256_set_epi64x(
-                        expansion_row[j + (i+7)*SIZE_PI],
-                        expansion_row[j + (i+6)*SIZE_PI],
-                        expansion_row[j + (i+5)*SIZE_PI],
-                        expansion_row[j + (i+4)*SIZE_PI]
-                    );
-                    __m256i v3 = _mm256_set_epi64x(
-                        expansion_row[j + (i+11)*SIZE_PI],
-                        expansion_row[j + (i+10)*SIZE_PI],
-                        expansion_row[j + (i+9)*SIZE_PI],
-                        expansion_row[j + (i+8)*SIZE_PI]
-                    );
-                    __m256i v4 = _mm256_set_epi64x(
-                        expansion_row[j + (i+15)*SIZE_PI],
-                        expansion_row[j + (i+14)*SIZE_PI],
-                        expansion_row[j + (i+13)*SIZE_PI],
-                        expansion_row[j + (i+12)*SIZE_PI]
-                    );
-                    
-                    // XOR into separate accumulators (breaks dependency chains for -O0)
-                    acc1 = _mm256_xor_si256(acc1, v1);
-                    acc2 = _mm256_xor_si256(acc2, v2);
-                    acc3 = _mm256_xor_si256(acc3, v3);
-                    acc4 = _mm256_xor_si256(acc4, v4);
-                }
-                
-                // Merge accumulators in tree reduction (minimizes latency)
-                acc1 = _mm256_xor_si256(acc1, acc2);
-                acc3 = _mm256_xor_si256(acc3, acc4);
-                acc1 = _mm256_xor_si256(acc1, acc3);
-                
-                // Horizontal reduction: 256-bit → 128-bit → 64-bit
-                __m128i low = _mm256_castsi256_si128(acc1);
-                __m128i high = _mm256_extracti128_si256(acc1, 1);
-                low = _mm_xor_si128(low, high);
-                
-                uint64_t tmp[2];
-                _mm_storeu_si128((__m128i*)tmp, low);
-                TYPE_DATA result = tmp[0] ^ tmp[1];
-                
-                // Handle tail elements (SIZE_PI % 16)
-                for (; i < SIZE_PI; i++) {
-                    result ^= expansion_row[j + i * SIZE_PI];
-                }
-                
-                a_row[j] = result;
-            } else {
-                // Software fallback: 8-way unrolled scalar path
-                TYPE_DATA result = 0;
-                TYPE_INDEX i = 0;
-                for (; i + 7 < SIZE_PI; i += 8) {
-                    result ^= expansion_row[j + (i+0)*SIZE_PI];
-                    result ^= expansion_row[j + (i+1)*SIZE_PI];
-                    result ^= expansion_row[j + (i+2)*SIZE_PI];
-                    result ^= expansion_row[j + (i+3)*SIZE_PI];
-                    result ^= expansion_row[j + (i+4)*SIZE_PI];
-                    result ^= expansion_row[j + (i+5)*SIZE_PI];
-                    result ^= expansion_row[j + (i+6)*SIZE_PI];
-                    result ^= expansion_row[j + (i+7)*SIZE_PI];
-                }
-                for (; i < SIZE_PI; i++) {
-                    result ^= expansion_row[j + i*SIZE_PI];
-                }
-                a_row[j] = result;
-            }
+            // Access pattern j + i*SIZE_PI is strided but consistent per thread;
+            // hardware prefetcher trains on it quickly within each thread's slice.
+            prg_a.reseed(&fullPermutation[j + i*SIZE_PI]);
+            prg_a.random_data_unaligned(expanded, sizeof(TYPE_DATA)*DATA_CHUNKS);
+
+            #pragma omp simd
+            for (TYPE_INDEX k = 0; k < DATA_CHUNKS; k++)
+                result[k] ^= expanded[k];
         }
+
+        // Write all DATA_CHUNKS values in one contiguous burst per column j.
+        // this->a[k][j]: each k-row is a separate array, no false sharing here.
+        for (TYPE_INDEX k = 0; k < DATA_CHUNKS; k++)
+            this->a[k][j] = result[k];
     }
+
     end = time_now;
     server_logs[12] = std::chrono::duration_cast<std::chrono::nanoseconds>(end-start).count();
-    
+    cout << "Time for computing a: " << server_logs[12] << " ns" << endl;
 
-    // 6.2 compute b (ULTRA-OPTIMIZED v3: AVX2 2×unroll + dual accumulators)
-    // Sequential access pattern: b[i] = XOR(expansion[i*SIZE_PI + j] for all j)
+
+    // ============================================================
+    // 6.2 compute b
+    // Outer loop: row i → accesses fullPermutation[i*SIZE_PI + j]
+    // Access pattern: fully sequential (row-major). Ideal for prefetcher.
+    // ============================================================
     start = time_now;
+
     #pragma omp parallel for schedule(static)
-    for (TYPE_INDEX k = 0; k < DATA_CHUNKS; k++)
+    for (TYPE_INDEX i = 0; i < SIZE_PI; i++)
     {
-        TYPE_DATA* __restrict__ expansion_row = this->fullPermutationExpansion[k];
-        TYPE_DATA* __restrict__ b_row = this->b[k];
-        
-        for (TYPE_INDEX i = 0; i < SIZE_PI; i++)
+        PRG prg_b;
+        TYPE_DATA result[DATA_CHUNKS] = {0};
+        TYPE_DATA expanded[DATA_CHUNKS];
+
+        for (TYPE_INDEX j = 0; j < SIZE_PI; j++)
         {
-            TYPE_INDEX base_idx = i * SIZE_PI;
-            
-            if (CPUFeatures::has_avx2()) {
-                // Dual accumulators for instruction-level parallelism (critical for -O0)
-                __m256i acc1 = _mm256_setzero_si256();
-                __m256i acc2 = _mm256_setzero_si256();
-                TYPE_INDEX j = 0;
-                
-                // Process 8 elements per iteration (2× AVX2 registers)
-                // Sequential memory access → optimal cache utilization
-                for (; j + 7 < SIZE_PI; j += 8) {
-#ifdef ENABLE_PREFETCH
-                    // Optional prefetching (may help if SIZE_PI >> L1 cache)
-                    // Prefetch 128 bytes (4 cache lines) ahead
-                    if (j + 64 < SIZE_PI) {
-                        _mm_prefetch((const char*)&expansion_row[base_idx + j + 64], _MM_HINT_T0);
-                    }
-#endif
-                    
-                    // Load 2× 256-bit vectors (8× TYPE_DATA, assuming TYPE_DATA = 64-bit)
-                    __m256i data1 = _mm256_loadu_si256((__m256i*)&expansion_row[base_idx + j]);
-                    __m256i data2 = _mm256_loadu_si256((__m256i*)&expansion_row[base_idx + j + 4]);
-                    
-                    // XOR into separate accumulators (breaks dependency chain)
-                    acc1 = _mm256_xor_si256(acc1, data1);
-                    acc2 = _mm256_xor_si256(acc2, data2);
-                }
-                
-                // Merge accumulators
-                acc1 = _mm256_xor_si256(acc1, acc2);
-                
-                // Horizontal reduction: 256-bit → 128-bit → 64-bit
-                __m128i low = _mm256_castsi256_si128(acc1);
-                __m128i high = _mm256_extracti128_si256(acc1, 1);
-                low = _mm_xor_si128(low, high);
-                
-                uint64_t tmp[2];
-                _mm_storeu_si128((__m128i*)tmp, low);
-                TYPE_DATA result = tmp[0] ^ tmp[1];
-                
-                // Handle tail elements (SIZE_PI % 8)
-                for (; j < SIZE_PI; j++) {
-                    result ^= expansion_row[base_idx + j];
-                }
-                
-                b_row[i] = result;
-            } else {
-                // Software fallback: 8-way unrolled scalar path
-                TYPE_DATA result = 0;
-                TYPE_INDEX j = 0;
-                for (; j + 7 < SIZE_PI; j += 8) {
-                    result ^= expansion_row[base_idx + j];
-                    result ^= expansion_row[base_idx + j + 1];
-                    result ^= expansion_row[base_idx + j + 2];
-                    result ^= expansion_row[base_idx + j + 3];
-                    result ^= expansion_row[base_idx + j + 4];
-                    result ^= expansion_row[base_idx + j + 5];
-                    result ^= expansion_row[base_idx + j + 6];
-                    result ^= expansion_row[base_idx + j + 7];
-                }
-                for (; j < SIZE_PI; j++) {
-                    result ^= expansion_row[base_idx + j];
-                }
-                b_row[i] = result;
-            }
+            // Sequential row-major access: best possible cache locality.
+            prg_b.reseed(&fullPermutation[i*SIZE_PI + j]);
+            prg_b.random_data_unaligned(expanded, sizeof(TYPE_DATA)*DATA_CHUNKS);
+
+            #pragma omp simd
+            for (TYPE_INDEX k = 0; k < DATA_CHUNKS; k++)
+                result[k] ^= expanded[k];
         }
+
+        for (TYPE_INDEX k = 0; k < DATA_CHUNKS; k++)
+            this->b[k][i] = result[k];
     }
+
     end = time_now;
     server_logs[13] = std::chrono::duration_cast<std::chrono::nanoseconds>(end-start).count();
+    cout << "Time for computing b: " << server_logs[13] << " ns" << endl;
 
 
-    // 6.3 compute delta (ULTRA-OPTIMIZED v3: AVX2 2×unroll + aggressive prefetching)
-    // Mixed access: delta[i] = XOR(row[i*SIZE_PI + j]) XOR XOR(col[j*SIZE_PI + sub_pi[i]])
+    // ============================================================
+    // 6.3 compute delta
+    //
+    // delta[k][i] = XOR_j(expand(punctured[i*SIZE_PI + j]))   [row i]
+    //             ^ XOR_j(expand(punctured[j*SIZE_PI + sub_pi[i]]))  [col sub_pi[i]]
+    //
+    // OPTIMIZATION STRATEGY - zero temporary 2D matrices:
+    //
+    //   Stage 1 (rows, row-major access):
+    //     Write directly into this->delta[k][i].
+    //
+    //   Stage 2 (columns, sequential col access via inv_sub_pi):
+    //     Build a 1-to-1 inverse map: inv_sub_pi[sub_pi[i]] = i  (bijection → no races)
+    //     Loop over col = 0..SIZE_PI-1 sequentially → row-major-like strides on
+    //     punctured[j*SIZE_PI + col], which the prefetcher handles well.
+    //     XOR column result directly into this->delta[k][inv_sub_pi[col]].
+    //
+    //   No delta_row / delta_col matrices needed → eliminates SIZE_PI×DATA_CHUNKS
+    //   heap allocations and the O(N) new/delete loop entirely.
+    //
+    //   Allocate inv_sub_pi BEFORE timing starts; free it AFTER timing ends.
+    // ============================================================
+
+    // PRE-TIMING: Build inverse permutation (1D array, no nested heap).
+    // inv_sub_pi[col] = unique row i such that sub_pi[i] == col.
+    TYPE_INDEX* inv_sub_pi = new TYPE_INDEX[SIZE_PI];
+    for (TYPE_INDEX i = 0; i < SIZE_PI; i++)
+        inv_sub_pi[sub_pi[i]] = i;
+
     start = time_now;
+
+    // --- Stage 1: Row contributions (sequential row-major access) ---
+    // Identical access pattern to 'b'. Write directly into this->delta.
     #pragma omp parallel for schedule(static)
-    for (TYPE_INDEX k = 0; k < DATA_CHUNKS; k++)
+    for (TYPE_INDEX i = 0; i < SIZE_PI; i++)
     {
-        TYPE_DATA* __restrict__ punctured_row = this->puncturedPermutationExpansion[k];
-        TYPE_DATA* __restrict__ delta_row = this->delta[k];
-        TYPE_INDEX* __restrict__ sub_pi_local = this->sub_pi;
-        
-        for (TYPE_INDEX i = 0; i < SIZE_PI; i++)
+        PRG prg_row;
+        TYPE_DATA result[DATA_CHUNKS] = {0};
+        TYPE_DATA expanded[DATA_CHUNKS];
+
+        for (TYPE_INDEX j = 0; j < SIZE_PI; j++)
         {
-            TYPE_INDEX base_idx = i * SIZE_PI;
-            TYPE_INDEX sub_pi_i = sub_pi_local[i];
-            
-            if (CPUFeatures::has_avx2()) {
-                // Separate accumulators for row and column loops
-                __m256i acc_row1 = _mm256_setzero_si256();
-                __m256i acc_row2 = _mm256_setzero_si256();
-                __m256i acc_col1 = _mm256_setzero_si256();
-                __m256i acc_col2 = _mm256_setzero_si256();
-                
-                TYPE_INDEX j = 0;
-                
-                // ============================================================
-                // LOOP 1: Row-wise XOR (sequential access, cache-friendly)
-                // Process 8 elements per iteration with dual accumulators
-                // ============================================================
-                for (; j + 7 < SIZE_PI; j += 8) {
-#ifdef ENABLE_PREFETCH
-                    // Prefetch sequential data (optional - hardware prefetcher handles this well)
-                    if (j + 64 < SIZE_PI) {
-                        _mm_prefetch((const char*)&punctured_row[base_idx + j + 64], _MM_HINT_T0);
-                    }
-#endif
-                    
-                    __m256i data1 = _mm256_loadu_si256((__m256i*)&punctured_row[base_idx + j]);
-                    __m256i data2 = _mm256_loadu_si256((__m256i*)&punctured_row[base_idx + j + 4]);
-                    
-                    acc_row1 = _mm256_xor_si256(acc_row1, data1);
-                    acc_row2 = _mm256_xor_si256(acc_row2, data2);
-                }
-                
-                // ============================================================
-                // LOOP 2: Column-wise XOR (strided access, prefetching critical!)
-                // Manual gather since AVX2 has no native gather-XOR
-                // ============================================================
-                TYPE_INDEX j2 = 0;
-                for (; j2 + 7 < SIZE_PI; j2 += 8) {
-#ifdef ENABLE_PREFETCH
-                    // Aggressive prefetching for strided access (this is where it helps most)
-                    // Prefetch 16-32 iterations ahead to hide memory latency
-                    if (j2 + 24 < SIZE_PI) {
-                        _mm_prefetch((const char*)&punctured_row[(j2+16) * SIZE_PI + sub_pi_i], _MM_HINT_T0);
-                        _mm_prefetch((const char*)&punctured_row[(j2+20) * SIZE_PI + sub_pi_i], _MM_HINT_T0);
-                        _mm_prefetch((const char*)&punctured_row[(j2+24) * SIZE_PI + sub_pi_i], _MM_HINT_T0);
-                    }
-#endif
-                    
-                    // Manual gather for first 4 elements
-                    __m256i col_data1 = _mm256_set_epi64x(
-                        punctured_row[(j2+3) * SIZE_PI + sub_pi_i],
-                        punctured_row[(j2+2) * SIZE_PI + sub_pi_i],
-                        punctured_row[(j2+1) * SIZE_PI + sub_pi_i],
-                        punctured_row[j2 * SIZE_PI + sub_pi_i]
-                    );
-                    
-                    // Manual gather for next 4 elements
-                    __m256i col_data2 = _mm256_set_epi64x(
-                        punctured_row[(j2+7) * SIZE_PI + sub_pi_i],
-                        punctured_row[(j2+6) * SIZE_PI + sub_pi_i],
-                        punctured_row[(j2+5) * SIZE_PI + sub_pi_i],
-                        punctured_row[(j2+4) * SIZE_PI + sub_pi_i]
-                    );
-                    
-                    acc_col1 = _mm256_xor_si256(acc_col1, col_data1);
-                    acc_col2 = _mm256_xor_si256(acc_col2, col_data2);
-                }
-                
-                // Merge all accumulators (tree reduction)
-                acc_row1 = _mm256_xor_si256(acc_row1, acc_row2);
-                acc_col1 = _mm256_xor_si256(acc_col1, acc_col2);
-                __m256i acc_final = _mm256_xor_si256(acc_row1, acc_col1);
-                
-                // Horizontal reduction: 256-bit → 128-bit → 64-bit
-                __m128i low = _mm256_castsi256_si128(acc_final);
-                __m128i high = _mm256_extracti128_si256(acc_final, 1);
-                low = _mm_xor_si128(low, high);
-                
-                uint64_t tmp[2];
-                _mm_storeu_si128((__m128i*)tmp, low);
-                TYPE_DATA result = tmp[0] ^ tmp[1];
-                
-                // Handle tail elements for row loop (SIZE_PI % 8)
-                for (; j < SIZE_PI; j++) {
-                    result ^= punctured_row[base_idx + j];
-                }
-                
-                // Handle tail elements for column loop (SIZE_PI % 8)
-                for (; j2 < SIZE_PI; j2++) {
-                    result ^= punctured_row[j2 * SIZE_PI + sub_pi_i];
-                }
-                
-                delta_row[i] = result;
-            } else {
-                // Software fallback: scalar with 4-way unrolling
-                TYPE_DATA result = 0;
-                
-                // Row loop
-                TYPE_INDEX j = 0;
-                for (; j + 3 < SIZE_PI; j += 4) {
-                    result ^= punctured_row[base_idx + j];
-                    result ^= punctured_row[base_idx + j + 1];
-                    result ^= punctured_row[base_idx + j + 2];
-                    result ^= punctured_row[base_idx + j + 3];
-                }
-                for (; j < SIZE_PI; j++) {
-                    result ^= punctured_row[base_idx + j];
-                }
-                
-                // Column loop
-                for (j = 0; j < SIZE_PI; j++) {
-                    result ^= punctured_row[j * SIZE_PI + sub_pi_i];
-                }
-                
-                delta_row[i] = result;
-            }
+            prg_row.reseed(&receivedPuncturedPermutation[i*SIZE_PI + j]);
+            prg_row.random_data_unaligned(expanded, sizeof(TYPE_DATA)*DATA_CHUNKS);
+
+            #pragma omp simd
+            for (TYPE_INDEX k = 0; k < DATA_CHUNKS; k++)
+                result[k] ^= expanded[k];
         }
+
+        // Direct write: each thread owns a distinct i → no false sharing.
+        for (TYPE_INDEX k = 0; k < DATA_CHUNKS; k++)
+            this->delta[k][i] = result[k];
     }
+
+    // --- Stage 2: Column contributions (sequential column access) ---
+    // Loop variable is 'col', NOT 'i', so access punctured[j*SIZE_PI + col]
+    // is stride-SIZE_PI but COL is monotonically increasing across the loop,
+    // which means adjacent OpenMP threads work on adjacent columns → good
+    // spatial locality across the thread team.
+    // The bijection inv_sub_pi[col] = i guarantees no two threads write to
+    // the same this->delta[k][row_i] → no race conditions.
+    #pragma omp parallel for schedule(static)
+    for (TYPE_INDEX col = 0; col < SIZE_PI; col++)
+    {
+        PRG prg_col;
+        TYPE_DATA col_result[DATA_CHUNKS] = {0};
+        TYPE_DATA expanded[DATA_CHUNKS];
+
+        for (TYPE_INDEX j = 0; j < SIZE_PI; j++)
+        {
+            // Sequential over col: each thread's assigned cols are contiguous.
+            // Hardware prefetcher easily tracks punctured[j*SIZE_PI + col].
+            prg_col.reseed(&receivedPuncturedPermutation[j*SIZE_PI + col]);
+            prg_col.random_data_unaligned(expanded, sizeof(TYPE_DATA)*DATA_CHUNKS);
+
+            #pragma omp simd
+            for (TYPE_INDEX k = 0; k < DATA_CHUNKS; k++)
+                col_result[k] ^= expanded[k];
+        }
+
+        // Bijection: exactly one row_i maps to this col → zero race conditions.
+        // XOR directly into this->delta, eliminating delta_col entirely.
+        TYPE_INDEX row_i = inv_sub_pi[col];
+        for (TYPE_INDEX k = 0; k < DATA_CHUNKS; k++)
+            this->delta[k][row_i] ^= col_result[k];
+    }
+
     end = time_now;
+
+    // POST-TIMING: free the single 1D helper array.
+    delete[] inv_sub_pi;
+
     server_logs[14] = std::chrono::duration_cast<std::chrono::nanoseconds>(end-start).count();
+    cout << "Time for computing delta: " << server_logs[14] << " ns" << endl;
     
     
     // 7. secret shared shuffle
@@ -1534,119 +1380,59 @@ void ServerDuetORAM::xor_vectors_optimized(TYPE_DATA** vec_a, TYPE_DATA** vec_b,
 
 void ServerDuetORAM::efficient_rotate()
 {
-    TYPE_DATA** arr1 = (this->serverNo == 0) ? puncturedPermutationExpansion : fullPermutationExpansion;
-    TYPE_DATA** arr2 = (this->serverNo == 0) ? fullPermutationExpansion : puncturedPermutationExpansion;
+    // 操作块矩阵（一维），而不是扩展矩阵（二维）
+    block* arr1 = (this->serverNo == 0) ? receivedPuncturedPermutation : fullPermutation;
+    block* arr2 = (this->serverNo == 0) ? fullPermutation : receivedPuncturedPermutation;
 
-    const size_t ELEMENT_SIZE = sizeof(TYPE_DATA);
+    const size_t ELEMENT_SIZE = sizeof(block);
     const bool use_avx2 = CPUFeatures::has_avx2();
     
     #pragma omp parallel num_threads(numThreads)
     {
         // Thread-local temp buffer to avoid contention
-        TYPE_DATA* temp_buffer = new TYPE_DATA[SIZE_PI];
+        block* temp_buffer = new block[SIZE_PI];
         
-        #pragma omp for collapse(2) schedule(static)
-        for (int k = 0; k < DATA_CHUNKS; k++)
+        // 处理第一个矩阵 (基于 circularShift_1)
+        #pragma omp for schedule(static)
+        for (int i = 0; i < SIZE_PI; i++)
         {
-            for (int i = 0; i < SIZE_PI; i++)
-            {
-                TYPE_DATA* row_start = arr1[k] + i * SIZE_PI;
-                size_t shift = circularShift_1[i];
-                
-                if (shift == 0 || shift == SIZE_PI) continue;
-                
-                // Manual rotation: right shift by 'shift' positions
-                // Original: [0,1,2,3,4,5] shift=2 -> [4,5,0,1,2,3]
-                
-                if (use_avx2 && shift % 4 == 0 && SIZE_PI % 4 == 0) {
-                    // AVX2 optimized path (4×64-bit elements per load/store)
-                    size_t shift_bytes = shift * ELEMENT_SIZE;
-                    size_t remaining_bytes = (SIZE_PI - shift) * ELEMENT_SIZE;
-                    
-                    // Copy last 'shift' elements to temp (vectorized)
-                    size_t j = 0;
-                    for (; j + 4 <= shift; j += 4) {
-                        __m256i data = _mm256_loadu_si256((__m256i*)&row_start[SIZE_PI - shift + j]);
-                        _mm256_storeu_si256((__m256i*)&temp_buffer[j], data);
-                    }
-                    for (; j < shift; j++) {
-                        temp_buffer[j] = row_start[SIZE_PI - shift + j];
-                    }
-                    
-                    // Move first (SIZE_PI - shift) elements to the right
-                    memmove(&row_start[shift], &row_start[0], remaining_bytes);
-                    
-                    // Copy temp to front (vectorized)
-                    j = 0;
-                    for (; j + 4 <= shift; j += 4) {
-                        __m256i data = _mm256_loadu_si256((__m256i*)&temp_buffer[j]);
-                        _mm256_storeu_si256((__m256i*)&row_start[j], data);
-                    }
-                    for (; j < shift; j++) {
-                        row_start[j] = temp_buffer[j];
-                    }
-                } else {
-                    // Scalar fallback (still 5× faster than std::rotate)
-                    size_t shift_bytes = shift * ELEMENT_SIZE;
-                    size_t remaining_bytes = (SIZE_PI - shift) * ELEMENT_SIZE;
-                    
-                    // Step 1: Copy last 'shift' elements to temp
-                    memcpy(temp_buffer, &row_start[SIZE_PI - shift], shift_bytes);
-                    
-                    // Step 2: Move first (SIZE_PI - shift) elements right
-                    memmove(&row_start[shift], &row_start[0], remaining_bytes);
-                    
-                    // Step 3: Copy temp to front
-                    memcpy(&row_start[0], temp_buffer, shift_bytes);
-                }
-            }
+            block* row_start = arr1 + i * SIZE_PI;
+            size_t shift = circularShift_1[i];
+            
+            if (shift == 0 || shift == SIZE_PI) continue;
+            
+            // Manual rotation: right shift by 'shift' positions
+            // Original: [0,1,2,3,4,5] shift=2 -> [4,5,0,1,2,3]
+            
+            size_t shift_bytes = shift * ELEMENT_SIZE;
+            size_t remaining_bytes = (SIZE_PI - shift) * ELEMENT_SIZE;
+            
+            // Step 1: Copy last 'shift' elements to temp
+            memcpy(temp_buffer, &row_start[SIZE_PI - shift], shift_bytes);
+            
+            // Step 2: Move first (SIZE_PI - shift) elements right
+            memmove(&row_start[shift], &row_start[0], remaining_bytes);
+            
+            // Step 3: Copy temp to front
+            memcpy(&row_start[0], temp_buffer, shift_bytes);
         }
         
-        #pragma omp for collapse(2) schedule(static)
-        for (int k = 0; k < DATA_CHUNKS; k++)
+        // 处理第二个矩阵 (基于 circularShift_2)
+        #pragma omp for schedule(static)
+        for (int j = 0; j < SIZE_PI; j++)
         {
-            for (int j = 0; j < SIZE_PI; j++)
-            {
-                TYPE_DATA* col_start = arr2[k] + j * SIZE_PI;
-                size_t shift = circularShift_2[j];
-                
-                if (shift == 0 || shift == SIZE_PI) continue;
-                
-                // Same rotation logic as arr1
-                if (use_avx2 && shift % 4 == 0 && SIZE_PI % 4 == 0) {
-                    // AVX2 path
-                    size_t shift_bytes = shift * ELEMENT_SIZE;
-                    size_t remaining_bytes = (SIZE_PI - shift) * ELEMENT_SIZE;
-                    
-                    size_t idx = 0;
-                    for (; idx + 4 <= shift; idx += 4) {
-                        __m256i data = _mm256_loadu_si256((__m256i*)&col_start[SIZE_PI - shift + idx]);
-                        _mm256_storeu_si256((__m256i*)&temp_buffer[idx], data);
-                    }
-                    for (; idx < shift; idx++) {
-                        temp_buffer[idx] = col_start[SIZE_PI - shift + idx];
-                    }
-                    
-                    memmove(&col_start[shift], &col_start[0], remaining_bytes);
-                    
-                    idx = 0;
-                    for (; idx + 4 <= shift; idx += 4) {
-                        __m256i data = _mm256_loadu_si256((__m256i*)&temp_buffer[idx]);
-                        _mm256_storeu_si256((__m256i*)&col_start[idx], data);
-                    }
-                    for (; idx < shift; idx++) {
-                        col_start[idx] = temp_buffer[idx];
-                    }
-                } else {
-                    // Scalar fallback
-                    size_t shift_bytes = shift * ELEMENT_SIZE;
-                    size_t remaining_bytes = (SIZE_PI - shift) * ELEMENT_SIZE;
-                    
-                    memcpy(temp_buffer, &col_start[SIZE_PI - shift], shift_bytes);
-                    memmove(&col_start[shift], &col_start[0], remaining_bytes);
-                    memcpy(&col_start[0], temp_buffer, shift_bytes);
-                }
-            }
+            block* col_start = arr2 + j * SIZE_PI;
+            size_t shift = circularShift_2[j];
+            
+            if (shift == 0 || shift == SIZE_PI) continue;
+            
+            // Same rotation logic as arr1
+            size_t shift_bytes = shift * ELEMENT_SIZE;
+            size_t remaining_bytes = (SIZE_PI - shift) * ELEMENT_SIZE;
+            
+            memcpy(temp_buffer, &col_start[SIZE_PI - shift], shift_bytes);
+            memmove(&col_start[shift], &col_start[0], remaining_bytes);
+            memcpy(&col_start[0], temp_buffer, shift_bytes);
         }
         
         delete[] temp_buffer;
