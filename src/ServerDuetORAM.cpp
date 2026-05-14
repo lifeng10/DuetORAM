@@ -851,75 +851,94 @@ int ServerDuetORAM::evict(zmq::socket_t& socket)
     }
 
     // ============================================================
-    // 6.1 compute a
-    // Outer loop: column j → accesses fullPermutation[j + i*SIZE_PI]
-    // Access pattern: stride SIZE_PI (column-major), each thread owns its j.
-    // Stack-only temporaries → zero heap pressure inside the parallel region.
+    // 6.1 + 6.2  Fused computation of a and b in a single pass
+    //
+    // Both a and b are derived from the same PRG expansion of fullPermutation:
+    //   b[k][i] = XOR_j  expand(full[i*N+j])   (row i sum)
+    //   a[k][j] = XOR_i  expand(full[i*N+j])   (col j sum)
+    //
+    // Original: two independent passes → 2×SIZE_PI² PRG calls.
+    // Fused:    one row-major pass → SIZE_PI² PRG calls.
+    //
+    // Strategy:
+    //   - Outer loop over row i (row-major, cache-friendly for prefetcher).
+    //   - Each thread accumulates b[k][i] directly (thread owns row i → no races).
+    //   - Each thread accumulates col j into a per-thread flat buffer
+    //     col_accum[j * DATA_CHUNKS + k] (position-major, sequential writes).
+    //   - After the main loop, a reduce pass merges all thread col_accum into a[k][j].
+    //
+    // Extra memory: num_threads × SIZE_PI × DATA_CHUNKS × 8 B
+    //   e.g. 16 threads, BLOCK_SIZE=1024 (DC=128) → ~52 MB
     // ============================================================
     start = time_now;
 
-    #pragma omp parallel for schedule(static)
-    for (TYPE_INDEX j = 0; j < SIZE_PI; j++)
-    {
-        PRG prg_a;
-        TYPE_DATA result[DATA_CHUNKS] = {0};  // thread-local accumulator
-        TYPE_DATA expanded[DATA_CHUNKS];       // single-block scratch buffer
+    const int nt_ab = omp_get_max_threads();
+    const size_t col_stride_ab = (size_t)SIZE_PI * DATA_CHUNKS;
+    // col_accum[tid * col_stride_ab + j * DATA_CHUNKS + k]
+    TYPE_DATA* col_accum_ab = new TYPE_DATA[(size_t)nt_ab * col_stride_ab]();  // zero-init
 
+    #pragma omp parallel num_threads(nt_ab)
+    {
+        const int tid = omp_get_thread_num();
+        TYPE_DATA* my_col = col_accum_ab + (size_t)tid * col_stride_ab;
+
+        // Main pass: row-major scan of fullPermutation.
+        // Each thread owns a contiguous slice of rows → b writes are race-free.
+        // col accumulation into my_col is entirely thread-local → no races.
+        #pragma omp for schedule(static)
         for (TYPE_INDEX i = 0; i < SIZE_PI; i++)
         {
-            // Access pattern j + i*SIZE_PI is strided but consistent per thread;
-            // hardware prefetcher trains on it quickly within each thread's slice.
-            prg_a.reseed(&fullPermutation[j + i*SIZE_PI]);
-            prg_a.random_data_unaligned(expanded, sizeof(TYPE_DATA)*DATA_CHUNKS);
+            PRG prg;
+            TYPE_DATA result_b[DATA_CHUNKS] = {0};
+            TYPE_DATA expanded[DATA_CHUNKS];
+            const block* row = fullPermutation + i * SIZE_PI;
 
-            #pragma omp simd
+            for (TYPE_INDEX j = 0; j < SIZE_PI; j++)
+            {
+                prg.reseed(&row[j]);
+                prg.random_data_unaligned(expanded, sizeof(TYPE_DATA) * DATA_CHUNKS);
+
+                // Accumulate row sum → b[k][i]
+                #pragma omp simd
+                for (TYPE_INDEX k = 0; k < DATA_CHUNKS; k++)
+                    result_b[k] ^= expanded[k];
+
+                // Accumulate col j sum → thread-local buffer (sequential store)
+                TYPE_DATA* dst = my_col + j * DATA_CHUNKS;
+                #pragma omp simd
+                for (TYPE_INDEX k = 0; k < DATA_CHUNKS; k++)
+                    dst[k] ^= expanded[k];
+            }
+
             for (TYPE_INDEX k = 0; k < DATA_CHUNKS; k++)
-                result[k] ^= expanded[k];
+                this->b[k][i] = result_b[k];
         }
+        // Implicit barrier: all b writes and col_accum writes done before reduce.
 
-        // Write all DATA_CHUNKS values in one contiguous burst per column j.
-        // this->a[k][j]: each k-row is a separate array, no false sharing here.
-        for (TYPE_INDEX k = 0; k < DATA_CHUNKS; k++)
-            this->a[k][j] = result[k];
+        // Reduce pass: merge per-thread col buffers → a[k][j].
+        // Each thread owns a disjoint range of j → no races on a[k][j].
+        #pragma omp for schedule(static)
+        for (TYPE_INDEX j = 0; j < SIZE_PI; j++)
+        {
+            TYPE_DATA result_a[DATA_CHUNKS] = {0};
+            for (int t = 0; t < nt_ab; t++)
+            {
+                const TYPE_DATA* src = col_accum_ab + (size_t)t * col_stride_ab + j * DATA_CHUNKS;
+                #pragma omp simd
+                for (TYPE_INDEX k = 0; k < DATA_CHUNKS; k++)
+                    result_a[k] ^= src[k];
+            }
+            for (TYPE_INDEX k = 0; k < DATA_CHUNKS; k++)
+                this->a[k][j] = result_a[k];
+        }
     }
+
+    delete[] col_accum_ab;
 
     end = time_now;
     server_logs[12] = std::chrono::duration_cast<std::chrono::nanoseconds>(end-start).count();
-    cout << "Time for computing a: " << server_logs[12] << " ns" << endl;
-
-
-    // ============================================================
-    // 6.2 compute b
-    // Outer loop: row i → accesses fullPermutation[i*SIZE_PI + j]
-    // Access pattern: fully sequential (row-major). Ideal for prefetcher.
-    // ============================================================
-    start = time_now;
-
-    #pragma omp parallel for schedule(static)
-    for (TYPE_INDEX i = 0; i < SIZE_PI; i++)
-    {
-        PRG prg_b;
-        TYPE_DATA result[DATA_CHUNKS] = {0};
-        TYPE_DATA expanded[DATA_CHUNKS];
-
-        for (TYPE_INDEX j = 0; j < SIZE_PI; j++)
-        {
-            // Sequential row-major access: best possible cache locality.
-            prg_b.reseed(&fullPermutation[i*SIZE_PI + j]);
-            prg_b.random_data_unaligned(expanded, sizeof(TYPE_DATA)*DATA_CHUNKS);
-
-            #pragma omp simd
-            for (TYPE_INDEX k = 0; k < DATA_CHUNKS; k++)
-                result[k] ^= expanded[k];
-        }
-
-        for (TYPE_INDEX k = 0; k < DATA_CHUNKS; k++)
-            this->b[k][i] = result[k];
-    }
-
-    end = time_now;
-    server_logs[13] = std::chrono::duration_cast<std::chrono::nanoseconds>(end-start).count();
-    cout << "Time for computing b: " << server_logs[13] << " ns" << endl;
+    server_logs[13] = 0;
+    cout << "Time for computing a+b (fused, 1x PRG pass): " << server_logs[12] << " ns" << endl;
 
 
     // ============================================================
@@ -953,62 +972,79 @@ int ServerDuetORAM::evict(zmq::socket_t& socket)
 
     start = time_now;
 
-    // --- Stage 1: Row contributions (sequential row-major access) ---
-    // Identical access pattern to 'b'. Write directly into this->delta.
-    #pragma omp parallel for schedule(static)
-    for (TYPE_INDEX i = 0; i < SIZE_PI; i++)
-    {
-        PRG prg_row;
-        TYPE_DATA result[DATA_CHUNKS] = {0};
-        TYPE_DATA expanded[DATA_CHUNKS];
+    // ============================================================
+    // Fused delta computation: single pass over receivedPuncturedPermutation.
+    //
+    // delta[k][i] = XOR_j expand(punc[i*N+j])           (row i)
+    //             ^ XOR_j expand(punc[j*N+sub_pi[i]])    (col sub_pi[i])
+    //
+    // Strategy (identical to a+b fusion):
+    //   - Row-major pass: each thread owns a contiguous slice of rows i.
+    //   - result_row[k] accumulates XOR over j → written to delta[k][i] (row part).
+    //   - my_col[j*DC+k] accumulates XOR over i for column j (thread-local, no race).
+    //   - After barrier, reduce pass merges all thread col buffers:
+    //       delta[k][inv_sub_pi[j]] ^= merged_col[k][j]   (col part)
+    // ============================================================
+    const int nt_delta = omp_get_max_threads();
+    const size_t col_stride_delta = (size_t)SIZE_PI * DATA_CHUNKS;
+    TYPE_DATA* col_accum_delta = new TYPE_DATA[(size_t)nt_delta * col_stride_delta]();  // zero-init
 
+    #pragma omp parallel num_threads(nt_delta)
+    {
+        const int tid = omp_get_thread_num();
+        TYPE_DATA* my_col = col_accum_delta + (size_t)tid * col_stride_delta;
+
+        // Main pass: row-major scan, compute row contribution and accumulate col.
+        #pragma omp for schedule(static)
+        for (TYPE_INDEX i = 0; i < SIZE_PI; i++)
+        {
+            PRG prg_delta;
+            TYPE_DATA result_row[DATA_CHUNKS] = {0};
+            TYPE_DATA expanded[DATA_CHUNKS];
+            const block* row = receivedPuncturedPermutation + i * SIZE_PI;
+
+            for (TYPE_INDEX j = 0; j < SIZE_PI; j++)
+            {
+                prg_delta.reseed(&row[j]);
+                prg_delta.random_data_unaligned(expanded, sizeof(TYPE_DATA) * DATA_CHUNKS);
+
+                // Row contribution → delta[k][i]
+                #pragma omp simd
+                for (TYPE_INDEX k = 0; k < DATA_CHUNKS; k++)
+                    result_row[k] ^= expanded[k];
+
+                // Col contribution → thread-local buffer (sequential store)
+                TYPE_DATA* dst = my_col + j * DATA_CHUNKS;
+                #pragma omp simd
+                for (TYPE_INDEX k = 0; k < DATA_CHUNKS; k++)
+                    dst[k] ^= expanded[k];
+            }
+
+            for (TYPE_INDEX k = 0; k < DATA_CHUNKS; k++)
+                this->delta[k][i] = result_row[k];
+        }
+        // Implicit barrier: all row writes and col_accum writes done.
+
+        // Reduce pass: merge per-thread col buffers and XOR into delta via inv_sub_pi.
+        // Each thread owns disjoint range of j → no race on delta[k][inv_sub_pi[j]].
+        #pragma omp for schedule(static)
         for (TYPE_INDEX j = 0; j < SIZE_PI; j++)
         {
-            prg_row.reseed(&receivedPuncturedPermutation[i*SIZE_PI + j]);
-            prg_row.random_data_unaligned(expanded, sizeof(TYPE_DATA)*DATA_CHUNKS);
-
-            #pragma omp simd
+            TYPE_DATA col_result[DATA_CHUNKS] = {0};
+            for (int t = 0; t < nt_delta; t++)
+            {
+                const TYPE_DATA* src = col_accum_delta + (size_t)t * col_stride_delta + j * DATA_CHUNKS;
+                #pragma omp simd
+                for (TYPE_INDEX k = 0; k < DATA_CHUNKS; k++)
+                    col_result[k] ^= src[k];
+            }
+            TYPE_INDEX row_i = inv_sub_pi[j];
             for (TYPE_INDEX k = 0; k < DATA_CHUNKS; k++)
-                result[k] ^= expanded[k];
+                this->delta[k][row_i] ^= col_result[k];
         }
-
-        // Direct write: each thread owns a distinct i → no false sharing.
-        for (TYPE_INDEX k = 0; k < DATA_CHUNKS; k++)
-            this->delta[k][i] = result[k];
     }
 
-    // --- Stage 2: Column contributions (sequential column access) ---
-    // Loop variable is 'col', NOT 'i', so access punctured[j*SIZE_PI + col]
-    // is stride-SIZE_PI but COL is monotonically increasing across the loop,
-    // which means adjacent OpenMP threads work on adjacent columns → good
-    // spatial locality across the thread team.
-    // The bijection inv_sub_pi[col] = i guarantees no two threads write to
-    // the same this->delta[k][row_i] → no race conditions.
-    #pragma omp parallel for schedule(static)
-    for (TYPE_INDEX col = 0; col < SIZE_PI; col++)
-    {
-        PRG prg_col;
-        TYPE_DATA col_result[DATA_CHUNKS] = {0};
-        TYPE_DATA expanded[DATA_CHUNKS];
-
-        for (TYPE_INDEX j = 0; j < SIZE_PI; j++)
-        {
-            // Sequential over col: each thread's assigned cols are contiguous.
-            // Hardware prefetcher easily tracks punctured[j*SIZE_PI + col].
-            prg_col.reseed(&receivedPuncturedPermutation[j*SIZE_PI + col]);
-            prg_col.random_data_unaligned(expanded, sizeof(TYPE_DATA)*DATA_CHUNKS);
-
-            #pragma omp simd
-            for (TYPE_INDEX k = 0; k < DATA_CHUNKS; k++)
-                col_result[k] ^= expanded[k];
-        }
-
-        // Bijection: exactly one row_i maps to this col → zero race conditions.
-        // XOR directly into this->delta, eliminating delta_col entirely.
-        TYPE_INDEX row_i = inv_sub_pi[col];
-        for (TYPE_INDEX k = 0; k < DATA_CHUNKS; k++)
-            this->delta[k][row_i] ^= col_result[k];
-    }
+    delete[] col_accum_delta;
 
     end = time_now;
 
